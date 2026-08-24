@@ -14,12 +14,13 @@ An AI-powered investigation system for analyzing Apache Iceberg tables on the IO
 ### Installation
 
 1. Clone the repository
-2. Copy environment template:
-   ```bash
-   cp .env.example .env
-   ```
-3. Configure `.env` with your credentials
-4. Install dependencies:
+2. Create a local `.env` file. There is no checked-in template because it would
+   encourage committing environment-specific credentials and certificate paths.
+   Configure IOMETE access (`IOMETE_HOST`, `IOMETE_LAKEHOUSE`,
+   `IOMETE_DATA_PLANE`, `IOMETE_USER_ID`, `IOMETE_API_TOKEN`,
+   `IOMETE_CATALOG`, `IOMETE_NAMESPACE`), the LLM adapter, and
+   `IOMETE_CERT_FILE` when your environment requires a private CA.
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
@@ -36,7 +37,6 @@ python scripts/run_investigation.py --table eds_it_dev.elh_comn.your_table
 - **[AGENTS.md](AGENTS.md)** - Coding standards and development guidelines
 - **[CONTEXT.md](CONTEXT.md)** - Domain context and terminology
 - **[Enterprise Network Setup](docs/ENTERPRISE_NETWORK_SETUP.md)** - Network connectivity and service configuration
-- **[Sample Data](temp/sample_data/README.md)** - Sample data for component-level testing
 
 ## Key Features
 
@@ -48,28 +48,16 @@ python scripts/run_investigation.py --table eds_it_dev.elh_comn.your_table
 
 ## Testing
 
-### Component Testing with Sample Data
-
-The project includes sample data extracted from real investigation runs for component-level testing:
-
-```bash
-# Extract sample data from investigation database
-python scripts/extract_sample_data.py
-```
-
-**Important:** Sample data supports component-level testing but **not** end-to-end investigation runs. See [Sample Data Documentation](temp/sample_data/README.md) for detailed limitations and testing strategy.
-
 ### Running Tests
 
 ```bash
-# Unit tests
-pytest tests/unit/
+# Hermetic test suite; scripts/ contains opt-in live smoke programs and is excluded.
+python -m pytest
 
-# Integration tests (requires IOMETE connection)
-pytest tests/integration/
-
-# E2E tests (requires IOMETE connection)
-pytest tests/e2e/
+# Install developer tools, then run static checks.
+python -m pip install -r requirements-dev.txt
+python -m ruff check src app.py ui_metadata.py ui_render.py
+python -m mypy
 ```
 
 ## Project Structure
@@ -85,17 +73,16 @@ smart-table-analyzer-demo/
 ├── knowledge/             # Curated runbooks and documentation
 ├── scripts/               # CLI scripts and utilities
 ├── tests/                 # Test suites
-├── temp/                  # Temporary files and sample data
 └── app.py                 # Streamlit UI
 ```
 
 ## Configuration
 
-See `.env.example` for all configuration options. Key settings:
+Create a local `.env` with the required connection settings. Key settings:
 
 - `IOMETE_HOST`, `IOMETE_USER_ID`, `IOMETE_API_TOKEN` - IOMETE connection
-- `LLM_BASE_URL`, `CLIENT_ID`, `CLIENT_SECRET` - LLM provider
-- `MAX_INVESTIGATION_CHECKS` - Maximum checks per investigation
+- `LLM_BASE_URL`, `LLM_CLIENT_ID`, `LLM_CLIENT_SECRET` - LLM provider
+- `IOMETE_CERT_FILE` - repository-relative certificate path, when required
 - `QUERY_TIMEOUT_SECONDS` - Query execution timeout
 
 ## Development
@@ -121,4 +108,6 @@ Knowledge entries are added to `knowledge/runbooks/`, `knowledge/iceberg/`, or `
 For issues or questions:
 - Check [Architecture.md](Architecture.md) for design decisions
 - Review [CONTEXT.md](CONTEXT.md) for domain terminology
-- See [Sample Data Documentation](temp/sample_data/README.md) for testing guidance
+- Run `python -m pytest` for the hermetic verification suite
+
+# smart-table-analyzer
