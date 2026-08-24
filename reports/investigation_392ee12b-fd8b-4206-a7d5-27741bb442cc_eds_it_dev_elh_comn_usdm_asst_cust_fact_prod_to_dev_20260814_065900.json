@@ -1,0 +1,90 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 13,
+  "run_id": "392ee12b-fd8b-4206-a7d5-27741bb442cc",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-14 06:58:22",
+  "completed_at": "2026-08-14 06:59:00",
+  "baseline_score": {
+    "overall": 71.45,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Are the data files evenly sized across all partitions, or do some partitions contain significantly larger or smaller files?",
+      "exact_result": "Each partition (identified by month) contains exactly one file, but file sizes range from about 280\u202fMB to 453\u202fMB, indicating noticeable variation across partitions.",
+      "verdict": "found",
+      "rationale": "The query shows file_count\u202f=\u202f1 for every month, yet min/max/avg sizes differ widely, so files are not evenly sized.",
+      "evidence_ids": [
+        "trail:0"
+      ],
+      "recommendation": "Consider normalizing file sizes or adjusting partitioning strategy if uniform file size is required for performance.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "Do any partitions contain data files that exceed the recommended optimal file size (e.g., 256\u202fMB) and could this variance be impacting scan efficiency?",
+      "exact_result": "61 partitions have at least one file larger than 256\u202fMB (max sizes range from ~272\u202fMB to ~440\u202fMB, each with a single oversized file).",
+      "verdict": "found",
+      "rationale": "The query returned rows where max_file_size_bytes > 268,435,456 (256\u202fMB) for many src_sys_crt_dts_month values, indicating oversized files exist.",
+      "evidence_ids": [
+        "trail:1"
+      ],
+      "recommendation": "Re\u2011partition or compact the oversized files to target ~256\u202fMB per file to improve scan parallelism and reduce I/O latency.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "What is the distribution of row counts across the month partitions, and are there any partitions that contain a disproportionately large number of rows compared to the others?",
+      "exact_result": "The 430 month partitions each contain roughly 6\u202fmillion to 10\u202fmillion rows. The largest partition (month\u202f621) has 10,003,571 rows (~1.5\u202f% of the total), and the next several partitions are in the 9\u20137\u202fmillion\u2011row range (\u22481.4\u202f%\u20131.1\u202f%). The bulk of partitions fall between 6\u202fmillion and 8\u202fmillion rows (\u22480.9\u202f%\u20131.2\u202f% of total). No single partition stands out as dramatically larger than the rest; the distribution is relatively even.",
+      "verdict": "found",
+      "rationale": "Row counts per month range from ~6\u202fM to ~10\u202fM, each representing about 1\u202f% of total rows, indicating no disproportionate outlier.",
+      "evidence_ids": [
+        "trail:2"
+      ],
+      "recommendation": "No immediate action needed; data is evenly distributed across month partitions.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 3
+  }
+}

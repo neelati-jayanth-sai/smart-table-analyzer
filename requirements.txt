@@ -1,0 +1,28 @@
+# Smart Table Analyzer - Investigation Harness
+
+# Core dependencies
+python-dotenv>=1.0.0
+certifi>=2023.7.22
+
+# HTTP clients
+requests>=2.31.0
+httpx>=0.25.0
+
+# For real Iceberg table integration
+pyiceberg>=0.6.0
+
+# For IOMETE connection (align with cluster Spark version)
+pyspark>=3.5.0,<3.6.0
+sqlalchemy>=2.0.0
+
+# Dashboard
+streamlit>=1.30.0
+pandas>=2.0.0
+
+# SQL parsing for query validation hooks
+sqlparse>=0.4.4
+
+# Schema migrations and data validation
+alembic>=1.12.0
+pydantic>=2.0.0
+typing-extensions>=4.8.0

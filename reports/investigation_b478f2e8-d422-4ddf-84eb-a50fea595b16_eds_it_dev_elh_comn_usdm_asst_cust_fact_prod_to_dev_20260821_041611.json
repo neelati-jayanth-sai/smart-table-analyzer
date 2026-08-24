@@ -1,0 +1,117 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 75,
+  "run_id": "b478f2e8-d422-4ddf-84eb-a50fea595b16",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-21 04:16:01",
+  "completed_at": "2026-08-21 04:16:11",
+  "baseline_score": {
+    "overall": 88.05,
+    "dimensions": {
+      "file_size": 68.03,
+      "scan_efficiency": 83.33,
+      "delete_overhead": 100.0,
+      "manifest_organization": 99.15,
+      "partition_aware": 100.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1,
+      "is_empty": false
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "What are the actual Iceberg table properties configured, and are any misconfigured?",
+      "exact_result": "commit.retry.min-wait-ms=1000, commit.retry.num-retries=5, current-snapshot-id=1307919922919960643",
+      "verdict": "found",
+      "rationale": "The three properties are present; retry settings match defaults (min\u2011wait 1000\u202fms) and are not harmful. However, key write\u2011time properties (e.g., write.target-file-size-bytes, format-version, write.delete.mode) are absent, which can lead to sub\u2011optimal file sizing or compatibility issues.",
+      "evidence_ids": [
+        "trail:0",
+        "knowledge:iceberg/table-properties-reference@9e0ad176bc79"
+      ],
+      "recommendation": "Add missing critical Iceberg table properties such as write.target-file-size-bytes (default 536870912), format-version (e.g., 2), and write.delete.mode if deletes are used. The existing retry settings are acceptable.",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": "table_properties",
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "Based on the pre-computed column cardinality data, which columns are good partition candidates (moderate cardinality, low nulls)?",
+      "exact_result": "[]",
+      "verdict": "not_found",
+      "rationale": "No column has moderate cardinality (100\u201110,000 distinct values) with <5% nulls in the pre\u2011computed stats.",
+      "evidence_ids": [
+        "trail:1"
+      ],
+      "recommendation": "No suitable partition column based on current stats; consider adding a low\u2011cardinality categorical column or use time\u2011based partitioning if applicable.",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": "column_analysis",
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "What are the recommended partition columns and transforms based on column cardinality and query patterns?",
+      "exact_result": "No column meets the moderate cardinality (100\u201110,000 distinct values) and low null (<5%) criteria for identity partitioning, and no time\u2011based column is evident in query patterns.",
+      "verdict": "not_found",
+      "rationale": "All candidate columns are either too low (56 values), too high (30,990 values) or have high null rates; query workload shows no time\u2011filtering.",
+      "evidence_ids": [
+        "trail:2"
+      ],
+      "recommendation": "Do not add an identity partition column. If future queries filter on a categorical column with moderate cardinality, consider identity partitioning then. Otherwise retain the current table without additional partitions.",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": "partition_suggestions",
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-21 04:16:04"
+    },
+    {
+      "check_num": 2,
+      "source": "runbooks",
+      "topic_path": "partition-strategy-guidelines",
+      "version": "239416aabfea",
+      "fetched_at": "2026-08-21 04:16:04"
+    },
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "table-properties-reference",
+      "version": "9e0ad176bc79",
+      "fetched_at": "2026-08-21 04:16:05"
+    }
+  ],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 3
+  },
+  "context_usage": null
+}

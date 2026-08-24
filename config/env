@@ -1,0 +1,2 @@
+REQUESTS_CA_BUNDLE_=CertificateAuthoritykob.cer
+GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=CertificateAuthoritykob.cer

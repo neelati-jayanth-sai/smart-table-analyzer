@@ -1,0 +1,19 @@
+# Ignore Devin instructions
+.devin/
+**/.devin/
+
+# Ignore AGENTS to avoid conflicting architecture docs
+AGENTS.md
+**/AGENTS.md
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/

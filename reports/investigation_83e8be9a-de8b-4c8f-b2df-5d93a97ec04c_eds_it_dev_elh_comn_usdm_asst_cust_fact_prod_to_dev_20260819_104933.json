@@ -1,0 +1,142 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 55,
+  "run_id": "83e8be9a-de8b-4c8f-b2df-5d93a97ec04c",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-19 10:44:54",
+  "completed_at": "2026-08-19 10:49:33",
+  "baseline_score": {
+    "overall": 78.12,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 90.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1,
+      "is_empty": false,
+      "catalog_score": 50.0,
+      "downstream_count": 0,
+      "upstream_count": 0,
+      "has_catalog_context": true
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Are there any CAPS issues or deprecated properties in the table configuration?",
+      "exact_result": "No CAPS issues or deprecated properties detected in the listed table properties.",
+      "verdict": "not_found",
+      "rationale": "All property names are lower\u2011case as required and correspond to active Iceberg settings (commit.retry.* and current-snapshot-id) with no deprecation noted.",
+      "evidence_ids": [
+        "knowledge:iceberg/table-properties-reference@9e0ad176bc79"
+      ],
+      "recommendation": "No changes needed; the table configuration is valid.",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": "table_properties",
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "Which columns have high cardinality and could be good partition candidates?",
+      "exact_result": "SRC_CUST_PROD_ID, ASST_ID, SVC_TAG_ID",
+      "verdict": "found",
+      "rationale": "All three columns are identifier fields, typically high\u2011cardinality and suitable for identity partitioning in Iceberg.",
+      "evidence_ids": [
+        "knowledge:iceberg/partition-transforms@0a94cba344a6"
+      ],
+      "recommendation": "Use identity partition transforms on SRC_CUST_PROD_ID, ASST_ID, and SVC_TAG_ID as potential partition columns.",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": "column_analysis",
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "What are the recommended partition columns based on column analysis?",
+      "exact_result": "ORIG_SRC_SITE_ID, MFRR_ID, MFRR_NM",
+      "verdict": "found",
+      "rationale": "IDs are typically high\u2011cardinality and stable, making them ideal partition keys; names often have lower cardinality and are less suitable.",
+      "evidence_ids": [
+        "knowledge:runbooks/partition-strategy-guidelines@a760581385e4"
+      ],
+      "recommendation": "Use ORIG_SRC_SITE_ID and MFRR_ID as partition columns (optionally add MFRR_NM if query patterns frequently filter on it).",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": "partition_suggestions",
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "table-properties-reference",
+      "version": "9e0ad176bc79",
+      "fetched_at": "2026-08-19 10:45:00"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-19 10:45:13"
+    },
+    {
+      "check_num": 2,
+      "source": "runbooks",
+      "topic_path": "partition-strategy-guidelines",
+      "version": "a760581385e4",
+      "fetched_at": "2026-08-19 10:49:19"
+    }
+  ],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 6
+  },
+  "context_usage": {
+    "decide_prompt": {
+      "tokens": 462,
+      "max_tokens": 8000,
+      "usage_pct": 5.78
+    },
+    "knowledge_prompt": {
+      "tokens": 109,
+      "max_tokens": 8000,
+      "usage_pct": 1.36
+    },
+    "query_prompt": {
+      "tokens": 3260,
+      "max_tokens": 8000,
+      "usage_pct": 40.75
+    },
+    "analysis_prompt": {
+      "tokens": 423,
+      "max_tokens": 8000,
+      "usage_pct": 5.29
+    }
+  }
+}

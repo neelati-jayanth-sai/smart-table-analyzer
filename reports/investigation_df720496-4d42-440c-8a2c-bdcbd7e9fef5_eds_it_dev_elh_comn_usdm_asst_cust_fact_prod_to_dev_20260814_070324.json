@@ -1,0 +1,90 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 14,
+  "run_id": "df720496-4d42-440c-8a2c-bdcbd7e9fef5",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-14 07:02:37",
+  "completed_at": "2026-08-14 07:03:24",
+  "baseline_score": {
+    "overall": 71.45,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Is the data evenly distributed across the 430 partitions, or are there partitions that contain significantly more rows or data size than others?",
+      "exact_result": "Across 430 partitions, rows per partition range from 1 to 10,003,571 (average \u22481,552,600). Data size per partition ranges from 11\u202fKB to 453\u202fMB (average \u224871\u202fMB).",
+      "verdict": "found",
+      "rationale": "The min and max values are orders of magnitude apart, showing a highly uneven distribution of rows and bytes across partitions.",
+      "evidence_ids": [
+        "trail:0"
+      ],
+      "recommendation": "Consider rebalancing or repartitioning to avoid hotspots and improve query performance.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "Do any partitions contain a disproportionately large number of data files or a high proportion of very small files, indicating file\u2011size skew that could affect scan efficiency?",
+      "exact_result": "All 20 sampled partitions have file_count = 1. Only a few partitions contain a single very small file (<1\u202fMiB), but none have a large number of files or a high proportion of small files.",
+      "verdict": "not_found",
+      "rationale": "Since every partition reports exactly one file, there is no evidence of partitions with many files or a mix of many small files that would cause file\u2011size skew.",
+      "evidence_ids": [
+        "trail:1"
+      ],
+      "recommendation": "No immediate action needed for file\u2011size skew. If small\u2011file partitions are undesirable, consider consolidating them during future loads.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "Is the table defined with a sort order on any columns, and if so, does the current sort order match the most frequent query predicates or join keys, or could a different sort order improve scan efficiency?",
+      "exact_result": "sort_order_id = 0 (no sort order defined)",
+      "verdict": "found",
+      "rationale": "The distinct query returned a single row with sort_order_id\u202f=\u202f0, indicating the table has no defined sort order. Without a sort order, scans cannot benefit from ordering that matches frequent predicates or join keys, so a different sort order could improve efficiency.",
+      "evidence_ids": [
+        "trail:2"
+      ],
+      "recommendation": "Analyze the most common query predicates and join keys on this table and consider defining a sort order (e.g., clustering or Z\u2011ordering) on those columns to enable more efficient range scans and predicate push\u2011down.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 4
+  }
+}

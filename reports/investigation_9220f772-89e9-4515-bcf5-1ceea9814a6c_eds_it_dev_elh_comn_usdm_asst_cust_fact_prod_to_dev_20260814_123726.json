@@ -1,0 +1,101 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 18,
+  "run_id": "9220f772-89e9-4515-bcf5-1ceea9814a6c",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-14 12:37:00",
+  "completed_at": "2026-08-14 12:37:26",
+  "baseline_score": {
+    "overall": 71.45,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "What columns are defined as the sort order for the Iceberg table eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev?",
+      "exact_result": "No columns are defined as the sort order (sort_order_id = 0 indicates no sort order).",
+      "verdict": "found",
+      "rationale": "The query returned a single row with sort_order_id = 0, which means the table has no defined sort order columns.",
+      "evidence_ids": [
+        "knowledge:iceberg/sort-order-optimization@42de3a77462c"
+      ],
+      "recommendation": "If you need a sort order for performance, define one using ALTER TABLE ... SET SORT ORDER.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "What columns are defined as partition columns for the Iceberg table eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev, and what are the partition specifications (e.g., type, granularity) used?",
+      "exact_result": "The Iceberg table eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev is partitioned on the column SRC_SYS_CRT_DTS_month. The partition specification is a month\u2011level date partition (i.e., the source system creation timestamp truncated to month).",
+      "verdict": "found",
+      "rationale": "Query output shows the partition map containing only the key SRC_SYS_CRT_DTS_month, indicating it is the defined partition column. Iceberg stores month\u2011level date partitions as a date\u2011type with month granularity.",
+      "evidence_ids": [
+        "knowledge:iceberg/manifest-file-structure@9e9b57029b06"
+      ],
+      "recommendation": "Run SHOW CREATE TABLE eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev; or DESCRIBE TABLE to view the full partition spec details and confirm the type (date) and granularity (month).",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "sort-order-optimization",
+      "version": "42de3a77462c",
+      "fetched_at": "2026-08-14 12:37:05"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "delete-file-handling",
+      "version": "8f58d0073a71",
+      "fetched_at": "2026-08-14 12:37:17"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "data-skew-detection",
+      "version": "0e14eda1f18a",
+      "fetched_at": "2026-08-14 12:37:17"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "manifest-file-structure",
+      "version": "9e9b57029b06",
+      "fetched_at": "2026-08-14 12:37:17"
+    }
+  ],
+  "summary": {
+    "total_findings": 2,
+    "validated_findings": 2,
+    "hook_violations": 0,
+    "total_queries": 2
+  }
+}

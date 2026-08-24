@@ -1,0 +1,153 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 51,
+  "run_id": "d124ae7b-0e9f-4b5d-8d5f-8f04a0f5aef5",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-19 09:52:28",
+  "completed_at": "2026-08-19 09:53:08",
+  "baseline_score": {
+    "overall": 78.12,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 90.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1,
+      "is_empty": false,
+      "catalog_score": 50.0,
+      "downstream_count": 0,
+      "upstream_count": 0,
+      "has_catalog_context": true
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Are the 430 partitions of `eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev` evenly sized, or is there evidence of data skew across partitions?",
+      "exact_result": "min_records=1, max_records=10003571, min_bytes=11321, max_bytes=453211739 (430 partitions, total_records=667617969, total_bytes=30588066095)",
+      "verdict": "found",
+      "rationale": "The gap between the smallest and largest partition (1 vs 10\u202fM records, 11\u202fKB vs 453\u202fMB) shows extreme imbalance, confirming data skew.",
+      "evidence_ids": [
+        "knowledge:iceberg/data-skew-detection@0e14eda1f18a"
+      ],
+      "recommendation": "Re\u2011evaluate the partitioning strategy\u2014use higher\u2011cardinality columns, increase partition count, or apply bucketing to achieve more uniform partition sizes.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "What is the distribution of file sizes across the 430 partitions of `eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev`, and are there a large number of very small files that could impact read performance?",
+      "exact_result": "Across the 430 partitions, each partition contains a single data file. File sizes range from ~15\u202fMB to ~55\u202fMB (min\u202f=\u202f15\u202fMB, max\u202f=\u202f55\u202fMB, average \u2248\u202f30\u202fMB). Every file is counted as a \"small file\" (small_file_count\u202f=\u202f1 per partition). This means the table consists of ~430 very small files, well below Iceberg\u2019s recommended 128\u202fMB\u20131\u202fGB per file.",
+      "verdict": "found",
+      "rationale": "Iceberg performance guidelines advise keeping files \u2265128\u202fMB to avoid excessive file\u2011open overhead; the observed ~30\u202fMB average indicates many small files that can degrade read performance.",
+      "evidence_ids": [
+        "knowledge:iceberg/file-sizing-best-practices@2254c521af80"
+      ],
+      "recommendation": "Consider compacting the existing files into larger ones (e.g., 256\u202fMB\u2013512\u202fMB) using an Iceberg rewrite or MERGE operation, and adjust future write settings to target the recommended file size range.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "What is the total number of manifest files for `eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev`, and how are their sizes distributed? Are there many small manifest files that could increase query planning overhead?",
+      "exact_result": "The table `eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev` has exactly **1 manifest file** (manifest_file_count = 1). With only a single manifest, there are no numerous small manifest files that could add query\u2011planning overhead.",
+      "verdict": "found",
+      "rationale": "The query result reports manifest_file_count = 1, and Iceberg\u2019s manifest architecture shows that planning cost grows with many small manifests. Since only one manifest exists, overhead is minimal.",
+      "evidence_ids": [
+        "knowledge:iceberg/manifest-file-structure@9e9b57029b06"
+      ],
+      "recommendation": "No immediate action needed; the manifest count is low. Continue monitoring after future data loads to ensure manifest count remains modest.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "data-skew-detection",
+      "version": "0e14eda1f18a",
+      "fetched_at": "2026-08-19 09:52:34"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "file-sizing-best-practices",
+      "version": "2254c521af80",
+      "fetched_at": "2026-08-19 09:52:45"
+    },
+    {
+      "check_num": 2,
+      "source": "iceberg",
+      "topic_path": "manifest-file-structure",
+      "version": "9e9b57029b06",
+      "fetched_at": "2026-08-19 09:52:56"
+    },
+    {
+      "check_num": 2,
+      "source": "iceberg",
+      "topic_path": "delete-file-handling",
+      "version": "8f58d0073a71",
+      "fetched_at": "2026-08-19 09:52:56"
+    },
+    {
+      "check_num": 2,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-19 09:52:56"
+    }
+  ],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 3
+  },
+  "context_usage": {
+    "decide_prompt": {
+      "tokens": 410,
+      "max_tokens": 8000,
+      "usage_pct": 5.12
+    },
+    "knowledge_prompt": {
+      "tokens": 147,
+      "max_tokens": 8000,
+      "usage_pct": 1.84
+    },
+    "query_prompt": {
+      "tokens": 3564,
+      "max_tokens": 8000,
+      "usage_pct": 44.55
+    },
+    "analysis_prompt": {
+      "tokens": 785,
+      "max_tokens": 8000,
+      "usage_pct": 9.81
+    }
+  }
+}

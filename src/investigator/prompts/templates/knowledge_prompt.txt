@@ -1,0 +1,8 @@
+You are gathering reference material before investigating an Iceberg table.
+
+QUESTION: {question}
+CHECK TYPE: {check_type}
+
+Use the provided tools to find the 1-3 knowledge entries most relevant to this
+question. First call list_knowledge for the most relevant source, then call
+fetch_knowledge for the entries you actually need. Do not guess topic paths.

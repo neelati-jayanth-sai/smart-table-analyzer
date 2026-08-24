@@ -1,0 +1,90 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 17,
+  "run_id": "effa7e91-2ee2-453d-81d4-054094b700d7",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-14 07:10:55",
+  "completed_at": "2026-08-14 07:12:13",
+  "baseline_score": {
+    "overall": 71.45,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Is there significant size skew among the 430 partitions (i.e., do some partitions contain disproportionately large data files compared to others)?",
+      "exact_result": "430 partitions; min size 11,321\u202fbytes, max size 453,211,739\u202fbytes, average size \u224871,135,037\u202fbytes; max/min size ratio \u224840,033",
+      "verdict": "found",
+      "rationale": "The largest partition is ~453\u202fMB while the smallest is only ~11\u202fKB, giving a size ratio of over 40,000\u2011to\u20111, which indicates strong skew.",
+      "evidence_ids": [
+        "trail:0"
+      ],
+      "recommendation": "Investigate the partitioning strategy and consider redistributing data or using a more balanced partition key to reduce skew.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "Does the table have a defined sort order, and if so, does it align with the most common query predicates to improve scan efficiency?",
+      "exact_result": "The table only shows a single distinct sort_order_id value (0) and provides no information about a defined sort order or its alignment with query predicates.",
+      "verdict": "not_found",
+      "rationale": "No evidence indicates a defined sort order or its optimization for common predicates; only a column value is present.",
+      "evidence_ids": [
+        "trail:1"
+      ],
+      "recommendation": "Review table metadata or schema definitions to determine if a sort order is defined and whether it matches frequent query filters.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "Do the 430 partitions each correspond to a single data file, or are there partitions that contain multiple small files that could be compacted to improve scan efficiency?",
+      "exact_result": "All 430 partitions have file_count = 1 (i.e., each partition contains exactly one data file).",
+      "verdict": "found",
+      "rationale": "The query grouped partitions by file_count and returned a single row: file_count 1 with partition_cnt 430, indicating every partition holds a single file.",
+      "evidence_ids": [
+        "trail:2"
+      ],
+      "recommendation": "No compaction needed for these partitions, as each already contains only one file.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 3
+  }
+}

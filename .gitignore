@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets and credentials — never commit these
+.env
+.env.*
+!.env.example
+certs/
+*.cer
+*.pem
+*.key
+*.p12
+
+# Runtime artifacts
+data/
+logs/
+
+# Editors
+.vscode/
+.idea/
+.claude/settings.local.json

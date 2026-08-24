@@ -1,0 +1,117 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 45,
+  "run_id": "4ed2a75b-fec2-4fe3-acf1-4bfe3bbb8abf",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-19 07:36:09",
+  "completed_at": "2026-08-19 07:36:48",
+  "baseline_score": {
+    "overall": 78.12,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 90.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1,
+      "is_empty": false,
+      "catalog_score": 50.0,
+      "downstream_count": 0,
+      "upstream_count": 0,
+      "has_catalog_context": true
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Are the 430 partitions of the table evenly distributed in terms of row count and file size, or does significant skew exist among them?",
+      "exact_result": "430 partitions: record count min\u202f=\u202f1, max\u202f=\u202f10,003,571, avg\u202f\u2248\u202f1,552,600; file size min\u202f\u2248\u202f11\u202fKB, max\u202f\u2248\u202f453\u202fMB, avg\u202f\u2248\u202f71\u202fMB",
+      "verdict": "found",
+      "rationale": "The max record count and file size are orders of magnitude larger than the minima and far exceed the average, indicating strong partition and file size skew per Iceberg data\u2011skew guidelines.",
+      "evidence_ids": [
+        "knowledge:iceberg/data-skew-detection@0e14eda1f18a"
+      ],
+      "recommendation": "Re\u2011evaluate partitioning strategy (e.g., add more granular keys) and enforce target file sizes to reduce skew and improve query parallelism.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "What is the distribution of individual data file sizes in eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev, and does the table contain a high proportion of very small files (e.g., <128\u202fMB) that could degrade read performance?",
+      "exact_result": "The table has 430 data files: 343 (<128\u202fMB), 26 (128\u2011256\u202fMB), 61 (256\u2011512\u202fMB), and 0 (\u2265512\u202fMB). Approximately 80\u202f% of files are smaller than 128\u202fMB.",
+      "verdict": "found",
+      "rationale": "Query shows a dominant share of sub\u2011128\u202fMB files, which exceeds recommended minimums and can increase scan overhead. Iceberg best\u2011practice advises most files be 128\u202fMB\u20131\u202fGB, ideally 256\u2011512\u202fMB for optimal read performance.",
+      "evidence_ids": [
+        "knowledge:iceberg/file-sizing-best-practices@2254c521af80"
+      ],
+      "recommendation": "Consider compacting the 343 small files into larger ones (target 256\u2011512\u202fMB) via rewrite or merge operations. This will reduce file\u2011open costs and improve query latency.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "What is the current delete file count and total size relative to data files in eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev, and does this indicate significant delete overhead that could degrade query performance?",
+      "exact_result": "Delete file count: 0, Delete file size: 0\u202fbytes (0\u202f% of data file size ~30.6\u202fGB).",
+      "verdict": "found",
+      "rationale": "The query shows no delete files; Iceberg docs state delete files add read overhead only when present, so zero deletes imply no performance impact.",
+      "evidence_ids": [
+        "knowledge:iceberg/delete-file-handling@8f58d0073a71"
+      ],
+      "recommendation": "No immediate action needed; monitor for future delete file accumulation.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "data-skew-detection",
+      "version": "0e14eda1f18a",
+      "fetched_at": "2026-08-19 07:36:14"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "file-sizing-best-practices",
+      "version": "2254c521af80",
+      "fetched_at": "2026-08-19 07:36:26"
+    },
+    {
+      "check_num": 2,
+      "source": "iceberg",
+      "topic_path": "delete-file-handling",
+      "version": "8f58d0073a71",
+      "fetched_at": "2026-08-19 07:36:42"
+    }
+  ],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 3
+  }
+}

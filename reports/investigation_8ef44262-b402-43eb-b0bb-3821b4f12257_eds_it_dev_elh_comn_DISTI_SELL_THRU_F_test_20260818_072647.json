@@ -1,0 +1,64 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 30,
+  "run_id": "8ef44262-b402-43eb-b0bb-3821b4f12257",
+  "table_name": "eds_it_dev.elh_comn.DISTI_SELL_THRU_F_test",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-18 07:26:35",
+  "completed_at": "2026-08-18 07:26:47",
+  "baseline_score": {
+    "overall": 58.33,
+    "dimensions": {
+      "file_size": 50.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 50.0,
+      "partition_aware": 50.0,
+      "sort_order": 50.0,
+      "row_count": 0,
+      "num_data_files": 0,
+      "total_data_file_bytes": 0,
+      "partition_count": 0,
+      "snapshot_count": 0,
+      "is_empty": true
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Is it expected that the table eds_it_dev.elh_comn.DISTI_SELL_THRU_F_test currently contains no rows and no data files?",
+      "exact_result": "The query returned a row count of 0 and no file count entries, indicating the table currently has no rows and no data files.",
+      "verdict": "found",
+      "rationale": "The query result explicitly shows zero records and no files, which matches the description of an empty Iceberg table.",
+      "evidence_ids": [
+        "trail:0",
+        "knowledge:iceberg/file-sizing-best-practices@2254c521af80"
+      ],
+      "recommendation": "If the table is intended to hold data, verify that the data ingestion process has run successfully. Otherwise, an empty table is normal for a newly created test table.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "file-sizing-best-practices",
+      "version": "2254c521af80",
+      "fetched_at": "2026-08-18 07:26:40"
+    }
+  ],
+  "summary": {
+    "total_findings": 1,
+    "validated_findings": 1,
+    "hook_violations": 0,
+    "total_queries": 1
+  }
+}

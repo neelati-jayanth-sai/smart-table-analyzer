@@ -1,0 +1,121 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 19,
+  "run_id": "c33a6daf-e984-443f-b244-a78b92fc7c10",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-14 12:37:56",
+  "completed_at": "2026-08-14 12:38:19",
+  "baseline_score": {
+    "overall": 71.45,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "```json\n{\n  \"question\": \"Given the low score in 'scan_efficiency' and 'sort_order', what is the current partitioning scheme of the table, and how does it align with common query patterns?\",\n  \"check_type\": \"partitioning\"\n}\n```?",
+      "exact_result": "hook_failed",
+      "verdict": "could_not_verify",
+      "rationale": "No analysis available",
+      "evidence_ids": [
+        "trail:0",
+        "knowledge:iceberg/partition-transforms@0a94cba344a6",
+        "knowledge:iceberg/sort-order-optimization@42de3a77462c",
+        "knowledge:iceberg/file-sizing-best-practices@2254c521af80"
+      ],
+      "recommendation": null,
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "```json\n{\n  \"question\": \"What is the current partitioning scheme of the table, and how does it align with common query patterns, especially considering the low 'scan_efficiency' and 'sort_order' scores?\",\n  \"check_type\": \"partitioning\"\n}\n```?",
+      "exact_result": "hook_failed",
+      "verdict": "could_not_verify",
+      "rationale": "No analysis available",
+      "evidence_ids": [
+        "trail:1",
+        "knowledge:iceberg/partition-transforms@0a94cba344a6",
+        "knowledge:iceberg/sort-order-optimization@42de3a77462c",
+        "knowledge:iceberg/table-properties-reference@9e0ad176bc79"
+      ],
+      "recommendation": null,
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-14 12:38:01"
+    },
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "sort-order-optimization",
+      "version": "42de3a77462c",
+      "fetched_at": "2026-08-14 12:38:01"
+    },
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "file-sizing-best-practices",
+      "version": "2254c521af80",
+      "fetched_at": "2026-08-14 12:38:01"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-14 12:38:13"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "sort-order-optimization",
+      "version": "42de3a77462c",
+      "fetched_at": "2026-08-14 12:38:13"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "table-properties-reference",
+      "version": "9e0ad176bc79",
+      "fetched_at": "2026-08-14 12:38:13"
+    }
+  ],
+  "summary": {
+    "total_findings": 2,
+    "validated_findings": 2,
+    "hook_violations": 7,
+    "total_queries": 7
+  }
+}

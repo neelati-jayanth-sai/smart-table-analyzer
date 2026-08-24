@@ -1,0 +1,118 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 41,
+  "run_id": "451f384b-ae02-4be2-9e32-24a55ad4dce6",
+  "table_name": "eds_it_dev.elh_comn.sls_opp_ln_snap_wkly_f_vw_avijit",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-18 10:57:35",
+  "completed_at": "2026-08-18 10:58:17",
+  "baseline_score": {
+    "overall": 79.56,
+    "dimensions": {
+      "file_size": 100.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 97.39,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 722105849,
+      "num_data_files": 261,
+      "total_data_file_bytes": 51355373891,
+      "partition_count": 40,
+      "snapshot_count": 3,
+      "is_empty": false,
+      "catalog_score": 50.0,
+      "downstream_count": 0,
+      "upstream_count": 0,
+      "has_catalog_context": false
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Are the 40 partitions defined for this table aligned with common query predicates and evenly distributed in size to avoid data skew?",
+      "exact_result": "The table has 40 partitions with record counts ranging from 5.3\u202fM to 27.1\u202fM (\u22485\u00d7 difference) and sizes from 352\u202fMB to 1.92\u202fGB (\u22485\u00d7 difference). This indicates uneven distribution and potential data skew. No information is provided about the partition columns or typical query predicates, so alignment with common query patterns cannot be determined.",
+      "verdict": "inconclusive",
+      "rationale": "Quality gate rejection: Finding has inconclusive verdict",
+      "evidence_ids": [
+        "trail:0",
+        "knowledge:iceberg/partition-transforms@0a94cba344a6"
+      ],
+      "recommendation": null,
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "Is the data evenly distributed across the 40 partitions in terms of file size, or does any partition contain a disproportionate amount of data indicating skew?",
+      "exact_result": "The partition file sizes range from 352,588,952\u202fbytes (\u22480.35\u202fGB) to 1,920,425,559\u202fbytes (\u22481.92\u202fGB), a >5\u00d7 difference. The average per partition is 1,283,884,347\u202fbytes, while observed percentages of total data per partition are 3.3\u20113.7\u202f% (vs. an even share of 2.5\u202f%). This variation indicates a disproportionate amount of data in some partitions, i.e., data skew.",
+      "verdict": "found",
+      "rationale": "Skew is identified when max/min file sizes differ markedly from the average or expected equal share. Here the max is ~5\u00d7 the min and exceeds the average, confirming uneven distribution.",
+      "evidence_ids": [
+        "knowledge:iceberg/data-skew-detection@0e14eda1f18a"
+      ],
+      "recommendation": "Consider rebalancing the data: increase the number of buckets or adjust the partitioning scheme (e.g., finer time granularity) to distribute data more evenly across partitions and improve query performance.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "Is the manifest organization for this table optimal, with a limited number of consolidated manifest files, to minimize scan overhead and improve query performance?",
+      "exact_result": "The table has 3 distinct manifest lists for 3 snapshots, indicating each snapshot uses its own manifest list rather than a consolidated set of manifest files.",
+      "verdict": "found",
+      "rationale": "Optimal manifest organization consolidates manifests to a few lists, reducing the number of files scanned per query. Having a manifest list per snapshot increases scan overhead.",
+      "evidence_ids": [
+        "knowledge:iceberg/manifest-file-structure@9e9b57029b06"
+      ],
+      "recommendation": "Consider consolidating manifest files across snapshots (e.g., using Iceberg\u2019s manifest merging or rewrite\u2011manifest operations) to limit the number of manifest lists and improve query performance.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-18 10:57:41"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "data-skew-detection",
+      "version": "0e14eda1f18a",
+      "fetched_at": "2026-08-18 10:57:56"
+    },
+    {
+      "check_num": 2,
+      "source": "iceberg",
+      "topic_path": "manifest-file-structure",
+      "version": "9e9b57029b06",
+      "fetched_at": "2026-08-18 10:58:10"
+    }
+  ],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 3
+  }
+}

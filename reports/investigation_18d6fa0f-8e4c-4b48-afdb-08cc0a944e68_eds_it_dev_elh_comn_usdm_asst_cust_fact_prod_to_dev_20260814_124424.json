@@ -1,0 +1,118 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 22,
+  "run_id": "18d6fa0f-8e4c-4b48-afdb-08cc0a944e68",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-14 12:43:55",
+  "completed_at": "2026-08-14 12:44:24",
+  "baseline_score": {
+    "overall": 71.45,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "What columns are defined as the sort order for the Iceberg table eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev?",
+      "exact_result": "",
+      "verdict": "not_found",
+      "rationale": "The provided query result only contains table statistics (record counts, file sizes, etc.) and does not include any metadata about the sort order columns for the Iceberg table eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev.",
+      "evidence_ids": [
+        "trail:0",
+        "knowledge:iceberg/delete-file-handling@8f58d0073a71",
+        "knowledge:iceberg/data-skew-detection@0e14eda1f18a",
+        "knowledge:iceberg/metadata-tables@9c1ab2937efa"
+      ],
+      "recommendation": "Run a DESCRIBE DETAIL or SHOW CREATE TABLE command on the Iceberg table, or query the Iceberg metadata tables (e.g., \"table_properties\" or \"table_snapshots\") to retrieve the 'sort-order' property, which lists the columns used for sorting.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "What columns are used for partitioning the Iceberg table eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev, and how are the partition values distributed across the existing data files?",
+      "exact_result": "The table is partitioned by the column **SRC_SYS_CRT_DTS_month**. In the current snapshot there are three distinct partition values \u2013 471, 516, and 540 \u2013 each represented by a single data file (1 file per partition) with sizes 15,808,262\u202fbytes, 54,669,835\u202fbytes, and 27,863,106\u202fbytes respectively.",
+      "verdict": "found",
+      "rationale": "The query output lists the partition column name and its values together with the count of data files per partition, confirming the partitioning scheme and distribution.",
+      "evidence_ids": [
+        "knowledge:iceberg/metadata-tables@9c1ab2937efa"
+      ],
+      "recommendation": "Query the Iceberg `files` or `partitions` metadata tables regularly to track new partition values and file counts, and consider compacting small files (e.g., the 15\u202fMB file for month 471) to improve read performance.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "delete-file-handling",
+      "version": "8f58d0073a71",
+      "fetched_at": "2026-08-14 12:43:58"
+    },
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "data-skew-detection",
+      "version": "0e14eda1f18a",
+      "fetched_at": "2026-08-14 12:43:58"
+    },
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "metadata-tables",
+      "version": "9c1ab2937efa",
+      "fetched_at": "2026-08-14 12:43:58"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "delete-file-handling",
+      "version": "8f58d0073a71",
+      "fetched_at": "2026-08-14 12:44:10"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "metadata-tables",
+      "version": "9c1ab2937efa",
+      "fetched_at": "2026-08-14 12:44:10"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "data-skew-detection",
+      "version": "0e14eda1f18a",
+      "fetched_at": "2026-08-14 12:44:10"
+    }
+  ],
+  "summary": {
+    "total_findings": 2,
+    "validated_findings": 2,
+    "hook_violations": 0,
+    "total_queries": 3
+  }
+}

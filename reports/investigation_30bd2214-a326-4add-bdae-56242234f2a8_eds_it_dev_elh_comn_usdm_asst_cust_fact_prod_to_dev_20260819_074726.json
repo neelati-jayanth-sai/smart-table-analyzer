@@ -1,0 +1,140 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 48,
+  "run_id": "30bd2214-a326-4add-bdae-56242234f2a8",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-19 07:46:48",
+  "completed_at": "2026-08-19 07:47:26",
+  "baseline_score": {
+    "overall": 78.12,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 90.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1,
+      "is_empty": false,
+      "catalog_score": 50.0,
+      "downstream_count": 0,
+      "upstream_count": 0,
+      "has_catalog_context": true
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Is the data evenly distributed across the 430 partitions, or does the table exhibit significant partition skew?",
+      "exact_result": "min_records=1, max_records=10003571, max_min_ratio=10003571.0",
+      "verdict": "found",
+      "rationale": "The maximum partition holds ~10\u202fM rows while the minimum holds only 1 row, yielding a max/min ratio of 10\u202fmillion\u2011to\u20111, which is far beyond a balanced distribution.",
+      "evidence_ids": [
+        "knowledge:iceberg/data-skew-detection@0e14eda1f18a"
+      ],
+      "recommendation": "The table exhibits severe partition skew. Consider increasing partition granularity, redistributing data (e.g., rewrite with a more uniform partition key), or using clustering/compaction to balance record counts across partitions.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "What is the distribution of file sizes across the table's data files, and are there a large number of small files that could lead to high read overhead?",
+      "exact_result": "The table has 430 data files totaling 30.6\u202fGB. Size distribution: 341 files (<64\u202fMB), 2 files (64\u2011128\u202fMB), 26 files (128\u2011256\u202fMB), 61 files (256\u2011512\u202fMB), 0 files (512\u202fMB\u20111\u202fGB), 0 files (>1\u202fGB). The minimum file size is 11\u202fKB and the maximum is 453\u202fMB.",
+      "verdict": "found",
+      "rationale": "The query result shows that ~79% (341/430) of files are smaller than the recommended 64\u202fMB minimum, indicating a large number of tiny files that can increase read overhead. Iceberg best\u2011practice guidance recommends keeping files in the 128\u202fMB\u20111\u202fGB range, ideally 256\u2011512\u202fMB, to reduce per\u2011file metadata and I/O costs.",
+      "evidence_ids": [
+        "knowledge:iceberg/file-sizing-best-practices@2254c521af80"
+      ],
+      "recommendation": "Consolidate the many sub\u201164\u202fMB files (e.g., via compaction) to reach the sweet spot of 256\u2011512\u202fMB per file. Aim for most files in the 128\u2011512\u202fMB range and avoid creating new files smaller than 64\u202fMB to lower read overhead and improve query performance.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "What is the count and size distribution of delete files (position or equality deletes) in the table, and could they be contributing to read overhead?",
+      "exact_result": "**Answer**\n\nThe query returned **no rows**, which means the table currently has **zero delete files** (neither position deletes nor equality deletes). Consequently:\n\n| Metric                              | Value |\n|-------------------------------------|-------|\n| Delete\u2011file count (`delete_file_count`) | 0 |\n| Total delete\u2011file size (`total_delete_file_size_bytes`) | 0\u202fB |\n| Minimum delete\u2011file size (`min_delete_file_size_bytes`) | N/A |\n| Maximum delete\u2011file size (`max_delete_file_size_bytes`) | N/A |\n| Average delete\u2011file size (`avg_delete_file_size_bytes`) | N/A |\n\nBecause there are no delete files, they **cannot be contributing to any read overhead** for this table.  \n\nIf you expect delete files to exist (e.g., after running `DELETE` statements or applying equality\u2011delete streams), verify that:\n\n1. The query is run against the correct Iceberg table and snapshot.\n2. The Iceberg catalog is refreshed so that newly\u2011added delete files are visible.\n3. The `content` filter (if any) matches both position (`content = 1`) and equality (`content = 2`) delete files.\n\n**Recommendation**\n\n- Re\u2011run the delete\u2011file inventory query after a refresh or after a known delete operation to confirm the result.\n- If delete files appear later, monitor their count and size; a large number of small delete files can increase read I/O because each delete file must be opened and scanned during query planning (see Iceberg delete\u2011file handling knowledge). Consider compacting delete files via `MERGE INTO \u2026` or `REWRITE DATA` with `--target-file-size-bytes` to reduce overhead.  \n\n---  \n\n**Evidence & Reasoning**\n\n- The query result shows `\"row_count\": 0` with the expected schema, indicating no matching rows were found.  \n- Iceberg documentation states that delete files are stored separately and are read in addition to data files; if none exist, they add no extra I/O.  \n\n**JSON Verdict**\n\n```json\n{\n  \"verdict\": \"found\",\n  \"exact_result\": \"Delete file count = 0; no size distribution available.\",\n  \"rationale\": \"Query returned zero rows for delete\u2011file metrics, meaning the table has no position or equality delete files, so they cannot cause read overhead.\",\n  \"evidence_ids\": [\"knowledge:iceberg/delete-file-handling@8f58d0073a71\"],\n  \"recommendation\": \"Refresh the catalog and re\u2011run the query after any DELETE/EQUALITY\u2011DELETE operations; if delete files appear, consider compacting them to reduce read overhead.\"\n}\n```",
+      "verdict": "inconclusive",
+      "rationale": "Quality gate rejection: Finding has inconclusive verdict",
+      "evidence_ids": [
+        "trail:2",
+        "knowledge:iceberg/delete-file-handling@8f58d0073a71"
+      ],
+      "recommendation": null,
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "data-skew-detection",
+      "version": "0e14eda1f18a",
+      "fetched_at": "2026-08-19 07:46:54"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "file-sizing-best-practices",
+      "version": "2254c521af80",
+      "fetched_at": "2026-08-19 07:47:05"
+    },
+    {
+      "check_num": 2,
+      "source": "iceberg",
+      "topic_path": "delete-file-handling",
+      "version": "8f58d0073a71",
+      "fetched_at": "2026-08-19 07:47:18"
+    }
+  ],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 3
+  },
+  "context_usage": {
+    "decide_prompt": {
+      "tokens": 334,
+      "max_tokens": 8000,
+      "usage_pct": 4.17
+    },
+    "knowledge_prompt": {
+      "tokens": 128,
+      "max_tokens": 8000,
+      "usage_pct": 1.6
+    },
+    "query_prompt": {
+      "tokens": 763,
+      "max_tokens": 8000,
+      "usage_pct": 9.54
+    },
+    "analysis_prompt": {
+      "tokens": 330,
+      "max_tokens": 8000,
+      "usage_pct": 4.12
+    }
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 58,
+  "run_id": "8f7c9f38-f8db-49c8-b560-9ceecdf09c6e",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-19 11:47:11",
+  "completed_at": "2026-08-19 11:52:31",
+  "baseline_score": {
+    "overall": 78.12,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 90.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1,
+      "is_empty": false,
+      "catalog_score": 50.0,
+      "downstream_count": 0,
+      "upstream_count": 0,
+      "has_catalog_context": true
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Are there any CAPS issues or deprecated properties in the table configuration?",
+      "exact_result": "No CAPS issues and no deprecated properties",
+      "verdict": "not_found",
+      "rationale": "The table status explicitly reports no CAPS naming problems and no use of deprecated Iceberg properties.",
+      "evidence_ids": [
+        "trail:0",
+        "knowledge:iceberg/table-properties-reference@9e0ad176bc79"
+      ],
+      "recommendation": "No action needed; continue monitoring for future property changes.",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": null,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "Which columns have high cardinality and could be good partition candidates?",
+      "exact_result": "SRC_CUST_PROD_ID, ASST_ID, SVC_TAG_ID",
+      "verdict": "found",
+      "rationale": "All three columns are identifier fields (customer\u2011product, asset, service\u2011tag) and typically have many distinct values, making them high\u2011cardinality and strong partition candidates.",
+      "evidence_ids": [
+        "knowledge:iceberg/partition-transforms@0a94cba344a6"
+      ],
+      "recommendation": "Consider partitioning on SRC_CUST_PROD_ID, ASST_ID, and/or SVC_TAG_ID using identity transforms to improve query pruning.",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": "column_analysis",
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "What are the recommended partition columns based on column analysis?",
+      "exact_result": "SRC_SYS_CRT_DTS, ORIG_SRC_SITE_ID, MFRR_ID",
+      "verdict": "found",
+      "rationale": "Guidelines advise using a timestamp column for time\u2011based partitioning; SRC_SYS_CRT_DTS fits this. Categorical IDs (ORIG_SRC_SITE_ID, MFRR_ID) can be added as secondary partitions if queries filter on them.",
+      "evidence_ids": [
+        "knowledge:runbooks/partition-strategy-guidelines@a760581385e4"
+      ],
+      "recommendation": "Primary partition on SRC_SYS_CRT_DTS (day granularity). Consider adding ORIG_SRC_SITE_ID or MFRR_ID as secondary partition columns based on query filters.",
+      "alternatives": [],
+      "db_validated": true,
+      "check_type": "partition_suggestions",
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "table-properties-reference",
+      "version": "9e0ad176bc79",
+      "fetched_at": "2026-08-19 11:47:17"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-19 11:47:29"
+    },
+    {
+      "check_num": 2,
+      "source": "runbooks",
+      "topic_path": "partition-strategy-guidelines",
+      "version": "a760581385e4",
+      "fetched_at": "2026-08-19 11:51:58"
+    }
+  ],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 6
+  },
+  "context_usage": {
+    "decide_prompt": {
+      "tokens": 458,
+      "max_tokens": 8000,
+      "usage_pct": 5.73
+    },
+    "knowledge_prompt": {
+      "tokens": 109,
+      "max_tokens": 8000,
+      "usage_pct": 1.36
+    },
+    "query_prompt": {
+      "tokens": 3260,
+      "max_tokens": 8000,
+      "usage_pct": 40.75
+    },
+    "analysis_prompt": {
+      "tokens": 417,
+      "max_tokens": 8000,
+      "usage_pct": 5.21
+    }
+  }
+}

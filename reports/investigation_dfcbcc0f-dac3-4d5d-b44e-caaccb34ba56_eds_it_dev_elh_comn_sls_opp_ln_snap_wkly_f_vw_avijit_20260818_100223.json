@@ -1,0 +1,92 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 32,
+  "run_id": "dfcbcc0f-dac3-4d5d-b44e-caaccb34ba56",
+  "table_name": "eds_it_dev.elh_comn.sls_opp_ln_snap_wkly_f_vw_avijit",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-18 10:01:43",
+  "completed_at": "2026-08-18 10:02:23",
+  "baseline_score": {
+    "overall": 79.56,
+    "dimensions": {
+      "file_size": 100.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 97.39,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 722105849,
+      "num_data_files": 261,
+      "total_data_file_bytes": 51355373891,
+      "partition_count": 40,
+      "snapshot_count": 3,
+      "is_empty": false,
+      "catalog_score": 50.0,
+      "downstream_count": 0,
+      "upstream_count": 0,
+      "has_catalog_context": false
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Do the data files for this Iceberg table have a balanced size distribution, or are there many small files that could be inflating storage and query overhead?",
+      "exact_result": "Out of 261 files, 239 (\u224892%) are 128\u2011256\u202fMB, 19 are 64\u2011128\u202fMB, 2 are 256\u2011512\u202fMB, and only 1 is <64\u202fMB, indicating a balanced size distribution with very few small files.",
+      "verdict": "found",
+      "rationale": "The table\u2019s file size histogram shows the vast majority of files fall within the recommended 128\u2011256\u202fMB range; only ~8% are under 128\u202fMB, so small\u2011file overhead is minimal.",
+      "evidence_ids": [
+        "knowledge:iceberg/file-sizing-best-practices@2254c521af80"
+      ],
+      "recommendation": "Current file sizing is appropriate. Consider compacting the single sub\u201164\u202fMB file and the two 256\u2011512\u202fMB files if they cause any downstream issues, but no major changes are needed.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "What is the proportion of delete files versus data files in this Iceberg table, and are there many small delete files that could be causing metadata overhead?",
+      "exact_result": "The table has 261 data files and 0 delete files (0.0% delete\u2011file proportion). There are no delete files at all, so there are also 0 small delete files.",
+      "verdict": "found",
+      "rationale": "The query result shows delete_file_count = 0 and delete_file_percentage = 0.0, with no small delete files reported. According to Iceberg delete\u2011file handling, metadata overhead from deletes only arises when many delete files (especially small ones) exist, which is not the case here.",
+      "evidence_ids": [
+        "knowledge:iceberg/delete-file-handling@8f58d0073a71"
+      ],
+      "recommendation": "No action needed regarding delete\u2011file cleanup; focus on other potential performance factors.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "file-sizing-best-practices",
+      "version": "2254c521af80",
+      "fetched_at": "2026-08-18 10:01:48"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "delete-file-handling",
+      "version": "8f58d0073a71",
+      "fetched_at": "2026-08-18 10:02:05"
+    }
+  ],
+  "summary": {
+    "total_findings": 2,
+    "validated_findings": 2,
+    "hook_violations": 1,
+    "total_queries": 3
+  }
+}

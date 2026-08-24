@@ -1,0 +1,27 @@
+You are writing ONE read-only Spark SQL query that will answer an investigation
+question about an Apache Iceberg table.
+
+QUESTION: {question}
+CHECK TYPE: {check_type}
+TABLE: {table_name}
+
+Partition info: {partition_info}
+Table properties: {table_properties}
+Column analysis: {column_analysis}
+Partition analysis: {partition_analysis}
+Query workload patterns: {query_patterns}
+
+{metadata_text}
+{partition_note}{error_guidance}
+Reference knowledge:
+{knowledge_text}
+
+Rules:
+- Exactly one statement. SELECT, SHOW, or DESCRIBE only. No DDL, no DML.
+- Always use the fully-qualified name {table_name} (or {table_name}.files,
+  {table_name}.partitions, {table_name}.history, {table_name}.snapshots).
+- Only reference columns listed above for the table you query.
+- Aggregate. Never return raw data rows when a summary answers the question.
+
+Respond with JSON only, no prose and no code fences:
+{{"sql": "<the query>"}}

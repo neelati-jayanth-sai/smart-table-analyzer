@@ -1,0 +1,42 @@
+You are analysing the result of an investigation query on an Iceberg table.
+
+TABLE: {table_name}
+QUESTION: {question}
+CHECK TYPE: {check_type}
+
+QUERY RESULT:
+{query_result}
+
+Reference knowledge:
+{knowledge_text}
+
+{critic_feedback_section}
+Evidence rules — every claim must be traceable:
+- The query result above is evidence ID "trail:{check_num}". Cite it.
+- Knowledge you used is cited with these IDs: {evidence_ids}
+- evidence_ids must never be empty. If you cannot cite evidence, you cannot make
+  the claim.
+
+Column analysis: {column_analysis}
+Query workload patterns: {query_patterns}
+
+Other rules:
+- exact_result holds the real numbers from the query result, as plain text or a
+  Markdown table. Never raw JSON, never a Python dict repr.
+- Write "Not applicable" rather than "N/A".
+- Recommend at most 2 partition columns.
+- confidence is your own 0.0-1.0 confidence in the verdict, given this evidence.
+- Set needs_followup to true only when one more specific query would materially
+  change the conclusion; then put that query's question in followup_question.
+
+Respond with JSON only, no prose and no code fences:
+{{"verdict": "found|not_found|inconclusive",
+ "exact_result": "<the real numbers>",
+ "rationale": "<why the evidence supports the verdict, at least 20 characters>",
+ "evidence_ids": ["trail:{check_num}"],
+ "confidence": 0.0,
+ "recommendation": "<what the engineer should do, or null>",
+ "alternatives": [],
+ "actionable_sql": "<remediation SQL using {table_name}, or null>",
+ "needs_followup": false,
+ "followup_question": null}}

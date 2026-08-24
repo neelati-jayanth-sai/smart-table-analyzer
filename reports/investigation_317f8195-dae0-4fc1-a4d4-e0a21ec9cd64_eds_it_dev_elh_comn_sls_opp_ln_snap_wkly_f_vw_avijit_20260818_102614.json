@@ -1,0 +1,117 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 36,
+  "run_id": "317f8195-dae0-4fc1-a4d4-e0a21ec9cd64",
+  "table_name": "eds_it_dev.elh_comn.sls_opp_ln_snap_wkly_f_vw_avijit",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-18 10:25:35",
+  "completed_at": "2026-08-18 10:26:14",
+  "baseline_score": {
+    "overall": 79.56,
+    "dimensions": {
+      "file_size": 100.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 97.39,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 722105849,
+      "num_data_files": 261,
+      "total_data_file_bytes": 51355373891,
+      "partition_count": 40,
+      "snapshot_count": 3,
+      "is_empty": false,
+      "catalog_score": 50.0,
+      "downstream_count": 0,
+      "upstream_count": 0,
+      "has_catalog_context": false
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Is the data distribution across the 40 partitions balanced, or does the table exhibit significant partition skew?",
+      "exact_result": "skew_ratio = 5.11 (max_records/min_records), indicating a >5\u2011fold difference between the smallest and largest partitions",
+      "verdict": "found",
+      "rationale": "A skew_ratio far greater than 1 (e.g., >2\u20133) signals significant partition skew per Iceberg data\u2011skew detection guidelines.",
+      "evidence_ids": [
+        "knowledge:iceberg/data-skew-detection@0e14eda1f18a"
+      ],
+      "recommendation": "Re\u2011evaluate the partitioning strategy (e.g., add more granular keys, rebalance data, or use bucketing) to achieve a more even record distribution across partitions.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "Are the partition columns used for eds_it_dev.elh_comn.sls_opp_ln_snap_wkly_f_vw_avijit aligned with the most common query predicates, and is the partitioning scheme optimal for query performance?",
+      "exact_result": "The table is partitioned by the column snapshot_dt_month, but no information is provided about the most common query predicates to determine alignment.",
+      "verdict": "inconclusive",
+      "rationale": "While Iceberg supports partition transforms (e.g., identity on a date column) that can improve pruning when queries filter on that column, we lack query workload data to confirm that snapshot_dt_month is frequently used in predicates. Therefore we cannot assert optimality.",
+      "evidence_ids": [
+        "knowledge:iceberg/partition-transforms@0a94cba344a6"
+      ],
+      "recommendation": "Review query logs to identify the most frequent filter columns. If queries commonly filter by month or date, the current partition on snapshot_dt_month is appropriate. Otherwise, consider adding or changing partitions (e.g., year, month, or identity on other high\u2011cardinality columns) to improve pruning and reduce scanned data.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 2,
+      "question": "Is the data within each of the 40 partitions sorted on a column (e.g., a date or primary key) that matches common query predicates, to enable efficient pruning and improve performance for potential downstream consumers?",
+      "exact_result": "All 261 data files have a sort order defined, and there is only one distinct sort order across them.",
+      "verdict": "found",
+      "rationale": "The query shows files_with_sort_order equals total_files and distinct_sort_orders is 1, indicating every file is sorted on the same column(s). This matches Iceberg\u2019s sort\u2011order optimization, which enables effective min/max pruning for common predicates.",
+      "evidence_ids": [
+        "knowledge:iceberg/sort-order-optimization@42de3a77462c"
+      ],
+      "recommendation": "Downstream consumers can rely on the existing sort order for efficient range filtering and partition pruning; ensure queries target the sorted column (e.g., date or primary key) to maximize performance.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "data-skew-detection",
+      "version": "0e14eda1f18a",
+      "fetched_at": "2026-08-18 10:25:40"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-18 10:25:52"
+    },
+    {
+      "check_num": 2,
+      "source": "iceberg",
+      "topic_path": "sort-order-optimization",
+      "version": "42de3a77462c",
+      "fetched_at": "2026-08-18 10:26:06"
+    }
+  ],
+  "summary": {
+    "total_findings": 3,
+    "validated_findings": 3,
+    "hook_violations": 0,
+    "total_queries": 3
+  }
+}

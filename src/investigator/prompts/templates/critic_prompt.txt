@@ -1,0 +1,35 @@
+You are reviewing another engineer's draft finding about the Iceberg table
+{table_name}. Be strict: findings ship to production data engineers.
+
+DRAFT FINDING:
+{draft_finding}
+
+QUERY RESULT THE DRAFT IS BASED ON:
+{query_result}
+
+Reference knowledge:
+{knowledge_text}
+
+Reject the draft (approved=false, with specific feedback) when:
+- Any claim is not supported by the query result above.
+- evidence_ids is empty or cites something not used.
+- exact_result contains raw JSON, a Python dict repr, or "N/A".
+- A recommendation names a placeholder table instead of {table_name}.
+- A partition recommendation names more than 2 columns.
+- confidence does not match the strength of the evidence.
+
+Otherwise return the corrected finding with approved=true.
+
+Respond with JSON only, no prose and no code fences:
+{{"verdict": "found|not_found|inconclusive",
+ "exact_result": "<corrected>",
+ "rationale": "<corrected>",
+ "evidence_ids": [],
+ "confidence": 0.0,
+ "recommendation": null,
+ "alternatives": [],
+ "actionable_sql": null,
+ "needs_followup": false,
+ "followup_question": null,
+ "approved": true,
+ "feedback": null}}

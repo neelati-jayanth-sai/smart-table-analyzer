@@ -1,0 +1,111 @@
+{
+  "version": "1.0.0",
+  "investigation_id": 21,
+  "run_id": "0e996adc-58bd-489e-8e52-1af961952289",
+  "table_name": "eds_it_dev.elh_comn.usdm_asst_cust_fact_prod_to_dev",
+  "catalog_name": "eds_it_dev",
+  "schema_name": "elh_comn",
+  "status": "completed",
+  "started_at": "2026-08-14 12:43:01",
+  "completed_at": "2026-08-14 12:43:23",
+  "baseline_score": {
+    "overall": 71.45,
+    "dimensions": {
+      "file_size": 53.0,
+      "scan_efficiency": 50.0,
+      "delete_overhead": 100.0,
+      "manifest_organization": 95.7,
+      "partition_aware": 80.0,
+      "sort_order": 50.0,
+      "row_count": 667617969,
+      "num_data_files": 430,
+      "total_data_file_bytes": 30588066095,
+      "partition_count": 430,
+      "snapshot_count": 1
+    }
+  },
+  "findings": [
+    {
+      "check_num": 0,
+      "question": "Given the low score in 'scan_efficiency' and 'sort_order', what is the current partitioning scheme of the table, and how does it align with common query access patterns?",
+      "exact_result": "error",
+      "verdict": "could_not_verify",
+      "rationale": "No analysis available",
+      "evidence_ids": [
+        "trail:0",
+        "knowledge:iceberg/partition-transforms@0a94cba344a6",
+        "knowledge:iceberg/sort-order-optimization@42de3a77462c",
+        "knowledge:iceberg/table-properties-reference@9e0ad176bc79"
+      ],
+      "recommendation": null,
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    },
+    {
+      "check_num": 1,
+      "question": "What is the current partitioning scheme of the table, and how does it align with common query access patterns?",
+      "exact_result": "The current partitioning scheme is defined by the partition column `SRC_SYS_CRT_DTS_month`, which has a value of -10382. The provided knowledge base describes Iceberg Partition Transforms, which define how source column values are converted into partition values, but it does not detail how this specific partition scheme aligns with common query access patterns.",
+      "verdict": "found",
+      "rationale": "The query result explicitly shows the partition column and its value. The knowledge base explains partition transforms but not query pattern alignment.",
+      "evidence_ids": [
+        "knowledge:iceberg/partition-transforms@0a94cba344a6"
+      ],
+      "recommendation": "To fully answer the question, information regarding common query access patterns and how they interact with this specific time-based partitioning scheme is needed.",
+      "alternatives": [],
+      "db_validated": true,
+      "validation": {
+        "valid": true,
+        "missing_ids": [],
+        "errors": []
+      }
+    }
+  ],
+  "knowledge_references": [
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-14 12:43:05"
+    },
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "sort-order-optimization",
+      "version": "42de3a77462c",
+      "fetched_at": "2026-08-14 12:43:05"
+    },
+    {
+      "check_num": 0,
+      "source": "iceberg",
+      "topic_path": "table-properties-reference",
+      "version": "9e0ad176bc79",
+      "fetched_at": "2026-08-14 12:43:05"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "partition-transforms",
+      "version": "0a94cba344a6",
+      "fetched_at": "2026-08-14 12:43:17"
+    },
+    {
+      "check_num": 1,
+      "source": "iceberg",
+      "topic_path": "README",
+      "version": "663671d96fdc",
+      "fetched_at": "2026-08-14 12:43:17"
+    }
+  ],
+  "summary": {
+    "total_findings": 2,
+    "validated_findings": 2,
+    "hook_violations": 0,
+    "total_queries": 5
+  }
+}
