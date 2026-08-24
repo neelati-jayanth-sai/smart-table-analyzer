@@ -18,7 +18,7 @@ class ValidationResult:
 
 
 class ClaimValidator:
-    """Check that every evidence ID resolves to a trail entry or knowledge reference."""
+    """Validate claims against successful evidence owned by the same check."""
 
     _TRAIL_RE = re.compile(r"^trail:(\d+)$")
     _KNOWLEDGE_RE = re.compile(r"^knowledge:([^/]+)/(.+)@([^@]+)$")
@@ -39,10 +39,14 @@ class ClaimValidator:
         has_successful_trail = False
 
         for evidence_id in finding.evidence_ids:
-            if self._is_successful_trail_id(evidence_id, successful_trail_checks):
+            if self._is_successful_trail_id(
+                evidence_id, finding.check_num, successful_trail_checks
+            ):
                 has_successful_trail = True
                 continue
-            if not self._is_valid_id(evidence_id, successful_trail_checks, knowledge_keys):
+            if not self._is_valid_id(
+                evidence_id, finding.check_num, successful_trail_checks, knowledge_keys
+            ):
                 missing_ids.append(evidence_id)
 
         if missing_ids:
@@ -55,13 +59,14 @@ class ClaimValidator:
     def _is_valid_id(
         self,
         evidence_id: str,
+        finding_check_num: int,
         trail_checks: set[int],
         knowledge_keys: set[str],
     ) -> bool:
         trail_match = self._TRAIL_RE.match(evidence_id)
         if trail_match:
             check_num = int(trail_match.group(1))
-            return check_num in trail_checks
+            return check_num == finding_check_num and check_num in trail_checks
 
         knowledge_match = self._KNOWLEDGE_RE.match(evidence_id)
         if knowledge_match:
@@ -70,15 +75,23 @@ class ClaimValidator:
 
         return False
 
-    def _is_successful_trail_id(self, evidence_id: str, trail_checks: set[int]) -> bool:
+    def _is_successful_trail_id(
+        self, evidence_id: str, finding_check_num: int, trail_checks: set[int]
+    ) -> bool:
         match = self._TRAIL_RE.match(evidence_id)
-        return bool(match and int(match.group(1)) in trail_checks)
+        return bool(
+            match
+            and int(match.group(1)) == finding_check_num
+            and int(match.group(1)) in trail_checks
+        )
 
     def _successful_trail_check_nums(self, investigation_id: int) -> set[int]:
         return {
             entry["check_num"]
             for entry in self._db.list_trail(investigation_id)
-            if entry.get("execution_status") == "success" and entry.get("query_result_json")
+            if entry.get("execution_status") == "success"
+            and entry.get("query_text")
+            and entry.get("query_result_json") is not None
         }
 
     def _knowledge_keys(self, investigation_id: int) -> set[str]:

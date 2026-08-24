@@ -9,6 +9,8 @@ import logging
 import os
 from typing import Any
 
+from src.metadata.query_executor import MetadataQueryExecutor, QueryObservation
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,33 +23,49 @@ class MetadataUnavailable(RuntimeError):
     """
 
 
-def _row(spark, query: str) -> dict[str, Any]:
+def _timeout_seconds(value: float | None) -> float:
+    if value is not None:
+        return max(value, 0.001)
     try:
+        return max(float(os.getenv("METADATA_QUERY_TIMEOUT_SECONDS", "300")), 0.001)
+    except ValueError:
+        return 300.0
+
+
+def _row(executor: MetadataQueryExecutor, spark, query: str) -> QueryObservation:
+    def read() -> dict[str, Any]:
         row = spark.sql(query).first()
         return row.asDict() if row is not None else {}
-    except Exception as exc:
-        logger.info("Metric query failed (%s): %s", query, exc)
-        return {}
+
+    return executor.execute(read)
 
 
-def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
+def collect_raw_metrics(
+    spark,
+    table_name: str,
+    snapshot_id: str | None = None,
+    query_timeout_seconds: float | None = None,
+) -> dict[str, Any]:
     """Read deterministic metrics without scanning the base table.
 
     ``row_count`` is the current data-file record-count estimate. Delete files
     can make it differ from the exact logical row count, so its provenance is
     returned with the result instead of presenting it as a scanned count.
     """
+    files = _snapshot_relation(f"{table_name}.files", snapshot_id)
+    partitions = _snapshot_relation(f"{table_name}.partitions", snapshot_id)
+    snapshots = _snapshot_relation(f"{table_name}.snapshots", snapshot_id)
     queries = {
         "data_file_stats": (
             f"SELECT COALESCE(SUM(record_count),0) AS row_count,"
             f" COUNT(*) AS num_data_files,"
             f" COALESCE(SUM(file_size_in_bytes),0) AS total_data_file_bytes,"
             f" COUNT(DISTINCT sort_order_id) AS distinct_sort_orders"
-            f" FROM {table_name}.files WHERE content=0"
+            f" FROM {files} WHERE content=0"
         ),
         "delete_file_stats": (
             f"SELECT COALESCE(SUM(file_size_in_bytes),0) AS delete_bytes"
-            f" FROM {table_name}.files WHERE content!=0"
+            f" FROM {files} WHERE content!=0"
         ),
         "partition_stats": (
             f"SELECT COUNT(*) AS num_partitions, MAX(record_count) AS max_rows,"
@@ -58,9 +76,9 @@ def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
             f" MAX(total_data_file_size_in_bytes) AS max_partition_bytes,"
             f" AVG(file_count) AS avg_files_per_partition,"
             f" MAX(file_count) AS max_files_per_partition"
-            f" FROM {table_name}.partitions"
+            f" FROM {partitions}"
         ),
-        "snapshot_count": f"SELECT COUNT(*) AS snapshot_count FROM {table_name}.snapshots",
+        "snapshot_count": f"SELECT COUNT(*) AS snapshot_count FROM {snapshots}",
     }
 
     results: dict[str, Any] = {
@@ -74,12 +92,16 @@ def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
         "row_count_source": "iceberg_data_file_record_counts",
         "row_count_is_exact": False,
     }
+    executor = MetadataQueryExecutor(spark, _timeout_seconds(query_timeout_seconds))
     failed: set[str] = set()
+    provenance: dict[str, dict[str, Any]] = {}
     for key, query in queries.items():
-        value = _row(spark, query)
-        if not value:
+        observation = _row(executor, spark, query)
+        provenance[key] = observation.provenance()
+        if observation.status != "success":
             failed.add(key)
         else:
+            value = observation.value
             if key == "partition_stats":
                 results["partition_count"] = int(value.get("num_partitions", 0) or 0)
                 results["partition_stats"] = {
@@ -108,6 +130,16 @@ def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
             len(failed), len(queries), table_name, ", ".join(sorted(failed)),
         )
     results["failed_metrics"] = sorted(failed)
+    results["timed_out_metrics"] = sorted(
+        key for key, observation in provenance.items() if observation["timed_out"]
+    )
+    results["cancelled_metrics"] = sorted(
+        key for key, observation in provenance.items()
+        if observation["cancellation"] == "attempted"
+    )
+    results["metric_provenance"] = provenance
+    results["snapshot_id"] = snapshot_id
+    results["metrics_snapshot_pinned"] = bool(snapshot_id)
     # Only a table that answered both metadata metrics can be called empty.
     results["is_empty"] = (
         "data_file_stats" not in failed
@@ -117,6 +149,10 @@ def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
     return results
 
 
+def _snapshot_relation(relation: str, snapshot_id: str | None) -> str:
+    return f"{relation} VERSION AS OF {snapshot_id}" if snapshot_id else relation
+
+
 def extract_query_patterns(
     spark, table_name: str, query_metrics_table: str | None = None
 ) -> dict[str, Any] | None:
@@ -124,11 +160,12 @@ def extract_query_patterns(
     try:
         from src.metadata.query_patterns import IOMETEQueryPatternAdapter
 
-        adapter = IOMETEQueryPatternAdapter(spark)
+        adapter = IOMETEQueryPatternAdapter(
+            spark, query_log_table=query_metrics_table or os.getenv("IOMETE_QUERY_METRICS_TABLE")
+        )
         if not adapter.is_available():
             return None
-        metrics_table = query_metrics_table or os.getenv("IOMETE_QUERY_METRICS_TABLE", table_name)
-        patterns = adapter.extract_patterns(metrics_table)
+        patterns = adapter.extract_patterns(table_name)
         return {
             "avg_cpu_time_ns": patterns.avg_cpu_time_ns,
             "avg_input_bytes": patterns.avg_input_bytes,

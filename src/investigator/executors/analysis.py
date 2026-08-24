@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from src.context import PromptProfile
-from src.investigator.critic import confidence_for
+from src.investigator.critic import confidence_for, sanitize_actionable_sql
+from src.investigator.critic.action_safety import approve_actionable_sql
 from src.investigator.prompts import build_analysis_prompt
 from src.investigator.state import InvestigationState, validate_state
 from src.models.state import AnalysisState
@@ -34,7 +35,12 @@ class ResultAnalysis:
             confidence=confidence_for(parsed, state),
             recommendation=to_str_or_none(parsed.get("recommendation")),
             alternatives=parsed.get("alternatives") or [],
-            actionable_sql=to_str_or_none(parsed.get("actionable_sql")),
+            actionable_sql=approve_actionable_sql(
+                sanitize_actionable_sql(
+                    to_str_or_none(parsed.get("actionable_sql")), state.get("table_name")
+                ),
+                state.get("table_name"),
+            ),
             needs_followup=bool(parsed.get("needs_followup")),
             followup_question=to_str_or_none(parsed.get("followup_question")),
             issue_state=str(parsed.get("issue_state", "needs_review")),

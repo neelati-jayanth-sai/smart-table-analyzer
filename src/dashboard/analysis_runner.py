@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from src.analyzer import AnalysisOutcome, SmartTableAnalyzer
 from src.analyzer.progress import AnalysisProgress, ProgressCallback
@@ -17,8 +18,6 @@ class AnalysisRequest:
     """Validated dashboard inputs for one table investigation."""
 
     table_name: str
-    catalog_name: str = ""
-    schema_name: str = ""
     snapshot_id: str | None = None
     query_metrics_table: str | None = None
     metadata_profile: str = "shallow"
@@ -26,13 +25,9 @@ class AnalysisRequest:
 
     def resolved_table(self) -> tuple[str, str, str]:
         parts = self.table_name.strip().split(".")
-        if len(parts) == 3 and all(parts):
-            return parts[0], parts[1], self.table_name.strip()
-        if not self.catalog_name.strip() or not self.schema_name.strip() or not self.table_name.strip():
+        if len(parts) != 3 or not all(_IDENTIFIER.fullmatch(part) for part in parts):
             raise ValueError("Enter a full catalog.schema.table name.")
-        return self.catalog_name.strip(), self.schema_name.strip(), (
-            f"{self.catalog_name.strip()}.{self.schema_name.strip()}.{self.table_name.strip()}"
-        )
+        return parts[0], parts[1], self.table_name.strip()
 
     def resolved_metadata_profile(self) -> str:
         """Map the UI's shallow/deep choice to the collector interface."""
@@ -42,6 +37,9 @@ class AnalysisRequest:
         if profile == "deep":
             return "deep"
         raise ValueError("Metadata profile must be shallow or deep.")
+
+
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 class DashboardAnalysisRunner:

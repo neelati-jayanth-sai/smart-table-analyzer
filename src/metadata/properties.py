@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 from typing import Any
 
 
@@ -38,29 +39,28 @@ def _is_known_configuration(canonical_key: str) -> bool:
     )
 
 
-def load_table_properties(spark, table_name: str) -> dict[str, Any]:
+def load_table_properties(spark, table_name: str, ddl: str = "") -> dict[str, Any]:
     """Return exact DDL keys, effective lowercase keys, and casing risks.
 
     ``properties`` is deliberately limited to keys already written in canonical
     lowercase. ``raw_properties`` preserves what the catalog returned so a
     mixed-case key cannot appear to be an active Iceberg setting.
     """
-    raw_properties: dict[str, str] = {}
-    effective_properties: dict[str, str] = {}
-    variants: dict[str, list[str]] = defaultdict(list)
+    shown_properties: dict[str, str] = {}
 
     try:
         rows = spark.sql(f"SHOW TBLPROPERTIES {table_name}").collect()
         for row in rows:
             key, value = str(row["key"]), str(row["value"])
-            raw_properties[key] = value
-            canonical_key = key.lower()
-            variants[canonical_key].append(key)
-            if key == canonical_key:
-                effective_properties[key] = value
+            shown_properties[key] = value
     except Exception as exc:
-        return {"error": str(exc)}
+        if not ddl:
+            return {"error": str(exc)}
 
+    ddl_properties = _ddl_properties(ddl)
+    raw_properties = {**shown_properties, **ddl_properties}
+    variants = _variants(raw_properties)
+    effective_properties = _effective_properties(shown_properties, ddl_properties)
     caps_warnings = _caps_warnings(raw_properties, effective_properties, variants)
     collisions = [warning for warning in caps_warnings if warning["has_canonical_collision"]]
     return {
@@ -70,6 +70,39 @@ def load_table_properties(spark, table_name: str) -> dict[str, Any]:
         "case_collisions": collisions,
         "has_caps_issues": bool(caps_warnings),
     }
+
+
+def _ddl_properties(ddl: str) -> dict[str, str]:
+    """Extract exact property spellings from a SHOW CREATE TABLE result."""
+    match = re.search(r"\bTBLPROPERTIES\s*\((.*)\)", ddl, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return {}
+    entries = re.findall(r"['`]([^'`]+)['`]\s*=\s*['`]([^'`]*)['`]", match.group(1))
+    return {key: value for key, value in entries}
+
+
+def _variants(properties: dict[str, str]) -> dict[str, list[str]]:
+    variants: dict[str, list[str]] = defaultdict(list)
+    for key in properties:
+        variants[key.lower()].append(key)
+    return variants
+
+
+def _effective_properties(
+    shown_properties: dict[str, str], ddl_properties: dict[str, str]
+) -> dict[str, str]:
+    """Avoid treating a normalized SHOW result as an active mixed-case DDL key."""
+    effective: dict[str, str] = {}
+    ddl_variants = _variants(ddl_properties)
+    for key, value in {**shown_properties, **ddl_properties}.items():
+        canonical_key = key.lower()
+        if key != canonical_key:
+            continue
+        variants = ddl_variants.get(canonical_key, [])
+        if variants and canonical_key not in variants:
+            continue
+        effective[key] = value
+    return effective
 
 
 def _caps_warnings(

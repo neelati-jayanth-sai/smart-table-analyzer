@@ -12,7 +12,14 @@ class InvestigationReadOperations:
     """Load investigations and evidence in their domain ordering."""
 
     def has_evidence(self, investigation_id: int) -> bool:
-        return any(finding.evidence_ids for finding in self.list_findings(investigation_id))
+        """Return whether at least one finding has authoritative table evidence."""
+        from src.validation import ClaimValidator
+
+        validator = ClaimValidator(self)
+        return any(
+            validator.validate(investigation_id, finding).valid
+            for finding in self.list_findings(investigation_id)
+        )
 
     def get_investigation(self, investigation_id: int) -> Investigation | None:
         with self._connect() as conn:

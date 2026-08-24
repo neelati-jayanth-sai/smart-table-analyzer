@@ -41,6 +41,8 @@ class ReportAssembler:
             result = self._validator.validate(investigation_id, finding)
             entry: dict[str, Any] = asdict(finding)
             entry["db_validated"] = bool(finding.validated)
+            entry["evidence_validated"] = result.valid
+            entry["validated"] = bool(finding.validated and result.valid)
             entry["validation"] = {
                 "valid": result.valid,
                 "missing_ids": result.missing_ids,

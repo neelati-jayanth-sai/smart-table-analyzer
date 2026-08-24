@@ -8,8 +8,8 @@ from typing import Any
 
 # Tuning knobs — override via env vars
 _COL_TIMEOUT = int(os.getenv("COL_ANALYSIS_TIMEOUT_SECONDS", "15"))
-_COL_WORKERS = int(os.getenv("COL_ANALYSIS_WORKERS", "8"))
-_COL_MAX = int(os.getenv("COL_ANALYSIS_MAX_COLUMNS", "20"))
+_COL_WORKERS = int(os.getenv("COL_ANALYSIS_WORKERS", "1"))
+_COL_MAX = int(os.getenv("COL_ANALYSIS_MAX_COLUMNS", "8"))
 
 # Column types most likely to be partition candidates — analysed first
 _PRIORITY_TYPES = {"date", "timestamp", "string", "int", "bigint", "long", "smallint", "short", "decimal"}
@@ -50,14 +50,23 @@ def _analyze_one_column(
         f"COUNT(*) - COUNT({col_name}) "
         f"FROM {table_name}"
     )
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(lambda: spark.sql(query).first())
-        try:
-            row = future.result(timeout=_COL_TIMEOUT)
-        except FuturesTimeoutError:
-            return col_name, {"type": col_type, "timeout": True}
-        except Exception as exc:
-            return col_name, {"type": col_type, "error": str(exc)}
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(lambda: spark.sql(query).first())
+    try:
+        row = future.result(timeout=_COL_TIMEOUT)
+    except FuturesTimeoutError:
+        future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+        return col_name, {
+            "type": col_type,
+            "timeout": True,
+            "cancellation_status": "unconfirmed",
+        }
+    except Exception as exc:
+        executor.shutdown(wait=False, cancel_futures=True)
+        return col_name, {"type": col_type, "error": str(exc)}
+    else:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     cardinality = int(row[0] or 0)
     null_count = int(row[1] or 0)
@@ -86,8 +95,10 @@ def analyze_columns(
 ) -> dict[str, Any]:
     """Analyze column statistics for partitioning recommendations.
 
-    Runs one combined SQL per column (cardinality + nulls) in parallel threads,
-    each bounded by COL_ANALYSIS_TIMEOUT_SECONDS (default 15s).
+    Runs at most the configured capped set of combined SQL statements. The
+    default is one worker and eight columns because each statement may scan the
+    base table. A timeout returns promptly, but Spark cancellation is reported
+    as unconfirmed because the connector may continue running server-side.
     """
     if row_count == 0:
         return {"error": "Cannot analyze columns for empty table"}
@@ -96,7 +107,7 @@ def analyze_columns(
     column_stats: dict[str, Any] = {}
     partition_candidates: list[dict[str, Any]] = []
 
-    with ThreadPoolExecutor(max_workers=_COL_WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, _COL_WORKERS)) as pool:
         futures = {
             pool.submit(_analyze_one_column, spark, table_name, col, row_count): col["name"]
             for col in columns_to_analyze
@@ -117,8 +128,14 @@ def analyze_columns(
                 column_stats[col_name] = {"error": str(exc)}
 
     partition_candidates.sort(key=lambda x: x["cardinality"])
+    timed_out_columns = [
+        name for name, stats in column_stats.items() if stats.get("timeout")
+    ]
     return {
         "column_stats": column_stats,
         "partition_candidates": partition_candidates[:10],
         "total_columns_analyzed": len(columns_to_analyze),
+        "collection_status": "partial" if timed_out_columns else "complete",
+        "timed_out_columns": timed_out_columns,
+        "cancellation_status": "unconfirmed" if timed_out_columns else "not_needed",
     }

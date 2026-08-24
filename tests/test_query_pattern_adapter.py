@@ -2,7 +2,6 @@
 
 import pytest
 from src.metadata.query_patterns import IOMETEQueryPatternAdapter
-from src.metadata.workload import QueryPatterns
 
 
 class MockSparkSession:
@@ -73,7 +72,9 @@ class MockSparkSession:
             return self.MockResult([self.MockRow("1", "")])
         # If it's a query for the target table, return the rows
         # The adapter queries for sql_text LIKE '%target_table%'
-        if "sql_text LIKE" in query and "target_table" in query.lower():
+        if "sql_text LIKE" in query and (
+            "target_table" in query.lower() or "target\\_table" in query.lower()
+        ):
             return self.MockResult(self.rows)
         # Otherwise return empty
         return self.MockResult([])
@@ -132,7 +133,16 @@ def test_column_usage_unaffected():
     # Column usage extraction should not crash
     # The actual extraction depends on qualified column references in the SQL
     assert patterns is not None
-    assert patterns.total_queries_analyzed == 10
+    assert patterns.total_queries_analyzed == 7
+
+
+def test_joined_query_bytes_are_not_attributed_to_the_target_table():
+    spark = MockSparkSession()
+    adapter = IOMETEQueryPatternAdapter(spark)
+
+    patterns = adapter.extract_patterns("target_table")
+
+    assert patterns.scan_queries_analyzed == 7
 
 
 if __name__ == "__main__":

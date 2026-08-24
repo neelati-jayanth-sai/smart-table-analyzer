@@ -71,8 +71,6 @@ def load_table_metadata(
     metadata["sample_rows"] = (
         _sample_rows(spark, table_name) if collection_profile.include_sample_rows else []
     )
-    metadata["table_properties"] = load_table_properties(spark, table_name)
-
     if collection_profile.analyze_column_stats and row_count > 0 and metadata["columns"]:
         metadata["column_analysis"] = analyze_columns(
             spark, table_name, metadata["columns"], row_count
@@ -81,5 +79,8 @@ def load_table_metadata(
         metadata["column_analysis"] = {"status": "not_collected_in_fast_profile"}
 
     metadata["partition_analysis"] = analyze_partitioning(spark, table_name, metadata)
+    metadata["table_properties"] = load_table_properties(
+        spark, table_name, metadata["partition_analysis"].get("table_ddl", "")
+    )
 
     return _json_safe(metadata)

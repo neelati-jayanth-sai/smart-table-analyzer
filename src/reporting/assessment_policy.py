@@ -43,6 +43,11 @@ def assess(
             [f"{signal['detail']}" for signal in high_signals],
             checks,
         )
+    if baseline.get("score_status") == "partial":
+        return Assessment(
+            "needs_review",
+            [str(baseline.get("score_reason") or "Health score prerequisites were incomplete.")],
+        )
     if hook_violations or not findings or _has_incomplete_check(findings):
         return Assessment(
             "needs_review",

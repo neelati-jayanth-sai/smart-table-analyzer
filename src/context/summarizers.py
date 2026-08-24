@@ -39,7 +39,8 @@ def summarize_query_result(query_result: dict[str, Any] | None, max_rows: int = 
     schema = query_result.get("schema") or []
     columns = [c.get("name", "") for c in schema]
     return {
-        "row_count": query_result.get("row_count", len(rows)),
+        "rows_returned": query_result.get("row_count", len(rows)),
+        "truncated": bool(query_result.get("truncated", False)),
         "schema": columns,
         "rows": rows[:max_rows],
     }

@@ -47,10 +47,20 @@ def score(raw_metrics: dict[str, Any],
         "unavailable_metrics": list(raw_metrics.get("failed_metrics") or []),
     })
 
+    has_scan_workload = bool((query_patterns or {}).get("scan_queries_analyzed", 0) >= 5)
+    unavailable = list(raw_metrics.get("failed_metrics") or [])
     return {
         "overall": round(result.overall_health, 2),
         "weakest": weakest,
         "dimensions": dims,
+        "score_status": "partial" if unavailable else "complete" if has_scan_workload else "structural",
+        "score_reason": (
+            "All required metadata and workload observations were available."
+            if not unavailable and has_scan_workload
+            else "Health score is withheld because metadata is incomplete."
+            if unavailable
+            else "Health score is structural only because workload observations are unavailable."
+        ),
     }
 
 
