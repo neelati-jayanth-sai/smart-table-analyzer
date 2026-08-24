@@ -44,7 +44,7 @@ class LegacyAnalyzer:
         """Read the table once and return the investigation's source of truth."""
         logger.info("Legacy Analyzer: collecting %s", table_name)
 
-        raw = collect_raw_metrics(self.spark, table_name)
+        raw = collect_raw_metrics(self.spark, table_name, snapshot_id)
         patterns = extract_query_patterns(self.spark, table_name, query_metrics_table)
         metadata = load_table_metadata(
             self.spark,
@@ -52,6 +52,12 @@ class LegacyAnalyzer:
             row_count=int(raw.get("row_count", 0)),
             profile=self.metadata_profile,
         )
+        metadata["observation"] = {
+            "snapshot_id": snapshot_id,
+            "metrics_snapshot_pinned": bool(snapshot_id),
+            "live_sources": ["schema", "ddl", "table_properties"],
+            "consistency": "metrics pinned; table setup observed live" if snapshot_id else "snapshot unavailable",
+        }
         if patterns:
             metadata["query_patterns"] = patterns
 

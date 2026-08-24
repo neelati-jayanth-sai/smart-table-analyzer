@@ -79,6 +79,8 @@ class InvestigationDb(InvestigationWriteOperations, InvestigationReadOperations)
         dimensions: dict[str, Any],
         signals: list[dict[str, Any]] | None = None,
         metadata_evidence: dict[str, Any] | None = None,
+        score_status: str = "complete",
+        score_reason: str | None = None,
     ) -> None:
         payload = json.dumps(
             {
@@ -86,6 +88,8 @@ class InvestigationDb(InvestigationWriteOperations, InvestigationReadOperations)
                 "dimensions": dimensions,
                 "signals": signals or [],
                 "metadata_evidence": metadata_evidence or {},
+                "score_status": score_status,
+                "score_reason": score_reason,
                 "assessment_version": ASSESSMENT_VERSION,
             },
             default=str,

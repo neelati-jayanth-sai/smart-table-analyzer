@@ -13,6 +13,7 @@ from src.context import InvestigationContext
 from src.investigator import Investigator
 from src.investigator.investigator import InvestigationResult
 from src.query import QueryWorkbench, create_investigation_hooks
+from src.query.snapshot_pinning import fetch_current_snapshot
 from src.reporting import ReportAssembler, ReportWriter
 from src.validation import ClaimValidator
 from src.metadata.collection_profile import MetadataCollectionProfile
@@ -21,8 +22,6 @@ from .legacy_analyzer import LegacyAnalyzer
 from .progress import AnalysisProgress, ProgressCallback
 
 logger = logging.getLogger(__name__)
-
-
 @dataclass
 class AnalysisOutcome:
     investigation_id: int
@@ -30,8 +29,6 @@ class AnalysisOutcome:
     context: InvestigationContext
     report_path: Path | None
     unvalidated_findings: int
-
-
 class SmartTableAnalyzer:
     """Run one table through the full pipeline."""
 
@@ -67,6 +64,8 @@ class SmartTableAnalyzer:
         output_dir: Path | str | None = None,
         output_path: Path | str | None = None,
     ) -> AnalysisOutcome:
+        if snapshot_id is None:
+            snapshot_id = fetch_current_snapshot(self.spark, table_name)
         run_id = str(uuid.uuid4())
         investigation_id = self.db.create_investigation(
             run_id=run_id,
@@ -91,6 +90,8 @@ class SmartTableAnalyzer:
                 context.baseline["dimensions"],
                 context.signals,
                 {"partition_analysis": context.metadata.get("partition_analysis", {})},
+                context.baseline.get("score_status", "complete"),
+                context.baseline.get("score_reason"),
             )
 
             self._progress("investigating", "Running evidence checks", investigation_id)

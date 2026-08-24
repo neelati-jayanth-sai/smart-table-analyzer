@@ -57,6 +57,8 @@
 - `src/validation/claim_validator.py` checks every finding's `evidence_ids` against `investigation_trail` and `knowledge_references`.
 - Evidence IDs use the forms `trail:{check_num}` and `knowledge:{source}/{topic_path}@{version}`.
 - `src/reporting/assembler.py` embeds a `ClaimValidator` result for each finding in the final report.
+- A claim must cite a successful query from its own check; knowledge is supporting context, never standalone table proof.
+- `src/dashboard/current_result_trust.py` is the current-run projection seam. It shows a verified finding or recommendation only when persisted validation, authoritative claim validation, and successful execution agree.
 
 ## Reporting seam
 
@@ -84,6 +86,8 @@
 - High-severity deterministic signals are assessment evidence, not LLM instructions: they lower the baseline score, persist with it, and require a review warning even when an LLM check returns `not_found`. A lifecycle status of `completed` means checks finished; it never means the table is healthy.
 - `src/analyzer/pipeline.py` is the single execution path: Legacy Analyzer -> Context Manager -> Investigator -> Evidence -> Report. There is no branch that skips the Investigator.
 - `SmartTableAnalyzer` receives and reuses an already-established Spark session; the CLI only stops sessions it created. Evidence queries use Spark Connect tag-scoped interruption when the connector supports it, and otherwise report timeout cancellation as unconfirmed rather than claiming the action stopped.
+- The Analyzer captures a snapshot when callers have not supplied one. Deterministic metrics are read `VERSION AS OF` that snapshot; DDL, schema, and properties remain explicitly live observations.
+- Deep column profiling is capped at eight columns and one worker by default. Its timeout returns promptly and records unconfirmed server-side cancellation rather than pretending Spark work stopped.
 - `src/context/summarizers.py::InvestigationContext` caches metadata, signals, baseline, completed checks, evidence IDs, and findings for one run; `to_state()` projects it into `InvestigationState`.
 - `scripts/run_investigation.py` is the thin CLI wrapper: environment, SSL, Spark session, then `SmartTableAnalyzer.analyze`.
 - `scripts/_investigation_cli.py` holds environment/Spark/report plumbing plus `setup_logging`, which stamps every log record with its investigation id.
@@ -172,13 +176,13 @@
 - Package `__init__` exports are the public API; deep module paths are internal
   and may move.
 
-## Dashboard run selection
+## Dashboard current-run UI
 
-- The dashboard defaults to the latest completed database run; immutable report
-  artifacts remain available as historic records and never displace the current
-  database result for the same run ID.
-- Incomplete assessments are rendered as a compact historic-report notice. They
-  do not contribute a health-score card or a current-status presentation.
+- The Streamlit UI has one job: validate and run one fully qualified table,
+  then render only that session's fresh outcome. It does not browse report
+  history or artifacts.
+- Historic report persistence remains a backend capability; it is not part of
+  the dashboard interface.
 
 ## Mock Iceberg test harness
 

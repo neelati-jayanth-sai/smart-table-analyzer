@@ -6,8 +6,6 @@ import base64
 import datetime
 import json
 import logging
-import uuid
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -15,6 +13,7 @@ from typing import Any
 from .hook_factory import create_investigation_hooks
 from .query_hooks import QueryHook, ValidationResult
 from .snapshot_pinning import pin_snapshot
+from .tagged_execution import QueryTimeoutUnconfirmed, TaggedQueryExecutor
 
 try:
     import numpy as np
@@ -35,12 +34,9 @@ class QueryResult:
     schema: list[dict[str, str]] | None = None
     row_count: int | None = None
     execution_time_ms: int | None = None
+    truncated: bool = False
     error: str | None = None
     hook_result: ValidationResult | None = None
-
-
-class QueryTimeoutUnconfirmed(TimeoutError):
-    """A query exceeded its deadline but the session cannot confirm cancellation."""
 
 
 def _json_safe(value: Any) -> Any:
@@ -82,16 +78,14 @@ class QueryWorkbench:
         self.table_name = table_name
         self.full_count = full_count
         self.table_metadata = table_metadata
-
         # Ground generated SQL in the real schema, so a hallucinated column is
         # rejected with the available column list instead of failing in Spark.
         if table_name and table_metadata:
             from .schema_grounding import SqlGroundingHook
-
-            self.hooks.append(
-                SqlGroundingHook(table_name=table_name, table_metadata=table_metadata)
-            )
-
+            self.hooks.append(SqlGroundingHook(table_name=table_name, table_metadata=table_metadata))
+        if table_name:
+            from .target_scope import TargetTableHook
+            self.hooks.append(TargetTableHook(table_name))
     def validate_query(self, query: str) -> tuple[bool, ValidationResult, str]:
         """Run query through all hooks and return (ok, last_result, rewritten)."""
         for hook in self.hooks:
@@ -106,11 +100,9 @@ class QueryWorkbench:
 
         rewritten = self._apply_snapshot_pinning(query)
         return True, ValidationResult(True, "QueryWorkbench"), rewritten
-
     def _apply_snapshot_pinning(self, query: str) -> str:
         """Rewrite table references to use the pinned snapshot."""
         return pin_snapshot(query, self.table_name, self.snapshot_id)
-
     def execute_query(self, query: str) -> QueryResult:
         """Validate, rewrite, and execute the query with a timeout."""
         logger.info(
@@ -129,7 +121,9 @@ class QueryWorkbench:
             )
 
         try:
-            rows, schema, row_count, elapsed_ms = self._execute_with_timeout(rewritten)
+            (rows, schema, row_count, truncated), elapsed_ms = TaggedQueryExecutor(
+                self.spark, self.timeout_seconds
+            ).execute(lambda: self._run_query(rewritten))
             logger.info(
                 "Query execution succeeded row_count=%d elapsed_ms=%d",
                 row_count,
@@ -143,6 +137,7 @@ class QueryWorkbench:
                 schema=schema,
                 row_count=row_count,
                 execution_time_ms=elapsed_ms,
+                truncated=truncated,
             )
         except QueryTimeoutUnconfirmed:
             logger.warning("Query timeout could not be confirmed after %ss", self.timeout_seconds)
@@ -169,56 +164,15 @@ class QueryWorkbench:
                 error=str(exc),
             )
 
-    def _execute_with_timeout(self, query: str) -> tuple[list[dict], list[dict], int, int]:
-        import time
-
-        start = time.perf_counter()
-        tag = f"investigation-query-{uuid.uuid4()}"
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(self._run_tagged_query, query, tag)
-        try:
-            rows, schema, row_count = future.result(timeout=self.timeout_seconds)
-        except TimeoutError:
-            cancelled = self._interrupt_tag(tag)
-            future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
-            if not cancelled:
-                raise QueryTimeoutUnconfirmed from None
-            raise
-        else:
-            executor.shutdown(wait=False, cancel_futures=True)
-        elapsed_ms = int((time.perf_counter() - start) * 1000)
-        return rows, schema, row_count, elapsed_ms
-
-    def _run_tagged_query(self, query: str, tag: str) -> tuple[list[dict], list[dict], int]:
-        tag_query = getattr(self.spark, "addTag", None)
-        remove_tag = getattr(self.spark, "removeTag", None)
-        if callable(tag_query):
-            tag_query(tag)
-        try:
-            return self._run_query(query)
-        finally:
-            if callable(remove_tag):
-                remove_tag(tag)
-
-    def _interrupt_tag(self, tag: str) -> bool:
-        interrupt = getattr(self.spark, "interruptTag", None)
-        if not callable(interrupt):
-            return False
-        try:
-            interrupt(tag)
-            return True
-        except Exception:
-            logger.warning("Could not interrupt Spark query tag %s", tag, exc_info=True)
-            return False
-
-    def _run_query(self, query: str) -> tuple[list[dict], list[dict], int]:
+    def _run_query(self, query: str) -> tuple[list[dict], list[dict], int, bool]:
         cleaned = query.strip().rstrip(";")
         df = self.spark.sql(cleaned)
-        limited = df.limit(self.row_limit)
-        rows = [_json_safe(row.asDict(recursive=True)) for row in limited.collect()]
+        limited = df.limit(self.row_limit + 1)
+        collected = [_json_safe(row.asDict(recursive=True)) for row in limited.collect()]
+        truncated = len(collected) > self.row_limit
+        rows = collected[:self.row_limit]
         schema = _json_safe(
             [{"name": f.name, "type": str(f.dataType)} for f in limited.schema.fields]
         )
         row_count = int(df.count()) if self.full_count else len(rows)
-        return rows, schema, row_count
+        return rows, schema, row_count, truncated

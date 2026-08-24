@@ -63,6 +63,7 @@ Use the skill vocabulary in all design discussions and keep `CONTEXT.md` current
 
 ## 7. Delegation
 
+- Delegate bounded work to the cheapest capable model whenever possible; escalate to a more capable model only when the task's reasoning, ambiguity, or risk genuinely requires it.
 - For any non-trivial, self-contained, or multi-step work, always spawn a subagent instead of doing the work inline.
 - Use `subagent_explore` for read-only research (runs on SWE-1.6 — cheapest).
 - Use the custom `implementer` profile (`.devin/agents/implementer.md`) for all write work: edits, new files, test runs. It is pinned to `model: swe` (SWE-1.6) and costs far less than `subagent_general`.

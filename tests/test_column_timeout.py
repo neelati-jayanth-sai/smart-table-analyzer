@@ -9,6 +9,8 @@ analyze_columns must:
 from __future__ import annotations
 
 import sys
+import time
+from threading import Event
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -62,6 +64,9 @@ class TestColumnTimeout:
         assert stats.get("timeout") is True, (
             f"Expected timeout=True for timed-out column, got: {stats}"
         )
+        assert stats["cancellation_status"] == "unconfirmed"
+        assert result["collection_status"] == "partial"
+        assert result["cancellation_status"] == "unconfirmed"
 
     def test_continues_after_timeout(self):
         """After a timeout on col_a, col_b must still be processed."""
@@ -100,6 +105,33 @@ class TestColumnTimeout:
         stats = result["column_stats"].get("status", {})
         assert "cardinality" in stats, f"Normal column must have cardinality, got {stats}"
         assert stats.get("timeout") is not True
+        assert result["collection_status"] == "complete"
+        assert result["cancellation_status"] == "not_needed"
+
+    def test_default_collection_is_conservative(self):
+        """Deep profiling must not fan out eight full-table scans by default."""
+        from src.metadata import columns
+
+        assert columns._COL_WORKERS == 1
+        assert columns._COL_MAX == 8
+
+    def test_timeout_does_not_wait_for_blocked_spark_call(self):
+        """A Python timeout must return while cancellation remains unconfirmed."""
+        release = Event()
+        df = MagicMock()
+        df.first.side_effect = release.wait
+        spark = MagicMock()
+        spark.sql.return_value = df
+        cols = [{"name": "col_a", "type": "STRING"}]
+
+        with patch.object(sys.modules["src.metadata.columns"], "_COL_TIMEOUT", 0.01):
+            started = time.monotonic()
+            result = analyze_columns(spark, "cat.sch.tbl", cols, row_count=1000)
+            elapsed = time.monotonic() - started
+        release.set()
+
+        assert elapsed < 0.5
+        assert result["column_stats"]["col_a"]["cancellation_status"] == "unconfirmed"
 
 
 if __name__ == "__main__":

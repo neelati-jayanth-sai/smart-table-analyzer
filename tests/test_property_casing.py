@@ -46,6 +46,26 @@ def test_mis_cased_reserved_property_is_also_checked():
     ] == "HIGH"
 
 
+def test_ddl_casing_overrides_a_normalized_show_properties_result():
+    table = healthy_table()
+    ddl = """
+        CREATE TABLE cat.sch.orders USING iceberg
+        TBLPROPERTIES ('Write.Target-File-Size-Bytes' = '268435456')
+    """
+    properties = load_table_properties(MockSpark(table), table.name, ddl=ddl)
+
+    assert "Write.Target-File-Size-Bytes" in properties["raw_properties"]
+    assert "write.target-file-size-bytes" not in properties["properties"]
+    warning = next(
+        item for item in properties["caps_warnings"]
+        if item["property"] == "Write.Target-File-Size-Bytes"
+    )
+    assert warning["is_known_configuration"] is True
+    assert next(signal for signal in _signals(properties) if signal["name"] == "table_property_naming")[
+        "severity"
+    ] == "HIGH"
+
+
 def test_known_casing_risk_requires_report_review():
     table = caps_properties_table()
     properties = load_table_properties(MockSpark(table), table.name)

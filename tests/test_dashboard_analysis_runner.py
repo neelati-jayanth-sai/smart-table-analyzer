@@ -9,20 +9,16 @@ from tests.test_investigator_scenarios import build
 
 
 def test_analysis_request_accepts_a_fully_qualified_table():
-    request = AnalysisRequest(table_name="cat.schema.orders", catalog_name="wrong", schema_name="wrong")
+    request = AnalysisRequest(table_name="cat.schema.orders")
 
     assert request.resolved_table() == ("cat", "schema", "cat.schema.orders")
 
 
-def test_analysis_request_constructs_a_table_from_catalog_and_schema():
-    request = AnalysisRequest(table_name="orders", catalog_name="cat", schema_name="schema")
-
-    assert request.resolved_table() == ("cat", "schema", "cat.schema.orders")
-
-
-def test_analysis_request_rejects_an_incomplete_table_location():
+def test_analysis_request_rejects_incomplete_or_unsafe_table_names():
     with pytest.raises(ValueError, match="full catalog.schema.table"):
-        AnalysisRequest(table_name="orders", catalog_name="cat").resolved_table()
+        AnalysisRequest(table_name="orders").resolved_table()
+    with pytest.raises(ValueError, match="full catalog.schema.table"):
+        AnalysisRequest(table_name="cat.schema.orders; DROP TABLE x").resolved_table()
 
 
 def test_analysis_request_maps_shallow_to_the_fast_collector_profile():

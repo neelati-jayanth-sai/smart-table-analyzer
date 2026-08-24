@@ -13,6 +13,7 @@ from src.models.finding import issue_state_for
 from ..executors._logging import _logged
 from ..executors.serialization import to_str, to_str_or_none
 from .sanitizers import confidence_for, sanitize_actionable_sql
+from .action_safety import approve_actionable_sql
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,11 @@ class CriticReview:
             logger.warning("Critic returned invalid JSON, falling back to draft. Error: %s", error_msg)
             return state
 
-        actionable_sql = sanitize_actionable_sql(
-            to_str_or_none(parsed.get("actionable_sql")), state.get("table_name")
+        actionable_sql = approve_actionable_sql(
+            sanitize_actionable_sql(
+                to_str_or_none(parsed.get("actionable_sql")), state.get("table_name")
+            ),
+            state.get("table_name"),
         )
         draft = dict(draft_finding)
         final_analysis = AnalysisState(

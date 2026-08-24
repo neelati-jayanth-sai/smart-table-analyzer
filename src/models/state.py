@@ -22,6 +22,7 @@ class QueryResultState(TypedDict):
     schema: NotRequired[list[dict[str, str]] | None]
     row_count: NotRequired[int | None]
     execution_time_ms: NotRequired[int | None]
+    truncated: NotRequired[bool]
     error: NotRequired[str | None]
 
 
