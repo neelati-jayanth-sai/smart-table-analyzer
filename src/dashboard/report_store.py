@@ -34,7 +34,8 @@ class RunIndex:
     @property
     def label(self) -> str:
         timestamp = self.completed_at or self.started_at
-        return f"{self.table_name} · {timestamp} · {self.source}"
+        origin = "Historic artifact" if self.source == "report artifact" else "Database run"
+        return f"{self.table_name} · {timestamp} · {origin}"
 
 
 class InvestigationReportStore:
@@ -59,11 +60,15 @@ class InvestigationReportStore:
             for row in self._db.list_investigations()
         ]
         artifacts = self._artifact_runs()
-        by_run = {run.run_id: run for run in database_runs}
-        by_run.update({run.run_id: run for run in artifacts})
+        by_run = {run.run_id: run for run in artifacts}
+        by_run.update({run.run_id: run for run in database_runs})
         return sorted(
             by_run.values(),
-            key=lambda run: (run.lifecycle_state == "completed", _run_timestamp(run)),
+            key=lambda run: (
+                run.source == "database",
+                run.lifecycle_state == "completed",
+                _run_timestamp(run),
+            ),
             reverse=True,
         )
 
@@ -103,3 +108,18 @@ class InvestigationReportStore:
 
 def _run_timestamp(run: RunIndex) -> str:
     return run.completed_at or run.started_at
+
+
+def default_run_index(runs: list[RunIndex], preferred_id: int | None = None) -> int:
+    """Choose the latest dashboard run before falling back to historic artifacts."""
+    if preferred_id is not None:
+        for index, run in enumerate(runs):
+            if run.investigation_id == preferred_id:
+                return index
+    for index, run in enumerate(runs):
+        if run.source == "database" and run.finalized:
+            return index
+    for index, run in enumerate(runs):
+        if run.source == "database":
+            return index
+    return 0

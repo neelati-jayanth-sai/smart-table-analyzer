@@ -172,6 +172,14 @@
 - Package `__init__` exports are the public API; deep module paths are internal
   and may move.
 
+## Dashboard run selection
+
+- The dashboard defaults to the latest completed database run; immutable report
+  artifacts remain available as historic records and never displace the current
+  database result for the same run ID.
+- Incomplete assessments are rendered as a compact historic-report notice. They
+  do not contribute a health-score card or a current-status presentation.
+
 ## Mock Iceberg test harness
 
 - `tests/mocks/iceberg.py` builds realistic Iceberg metadata per scenario:

@@ -1,10 +1,4 @@
-"""Smart Table Analyzer — the single execution path for an investigation.
-
-    Legacy Analyzer -> Context Manager -> Investigator -> Evidence -> Report
-
-There is no branch that skips the Investigator. A run that cannot reach the
-Investigator fails loudly rather than degrading into a metadata summary.
-"""
+"""Single execution path: deterministic collection, investigation, then report."""
 
 from __future__ import annotations
 
@@ -24,6 +18,7 @@ from src.validation import ClaimValidator
 from src.metadata.collection_profile import MetadataCollectionProfile
 
 from .legacy_analyzer import LegacyAnalyzer
+from .progress import AnalysisProgress, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +45,7 @@ class SmartTableAnalyzer:
         max_retries: int = 3,
         max_workers: int = 1,
         metadata_profile: str | None = None,
+        progress: ProgressCallback | None = None,
     ):
         self.spark = spark
         self.db = db
@@ -59,6 +55,7 @@ class SmartTableAnalyzer:
         self.max_retries = max_retries
         self.max_workers = max_workers
         self.metadata_profile = MetadataCollectionProfile.from_name(metadata_profile)
+        self.progress = progress
 
     def analyze(
         self,
@@ -66,6 +63,7 @@ class SmartTableAnalyzer:
         catalog_name: str = "",
         schema_name: str = "",
         snapshot_id: str | None = None,
+        query_metrics_table: str | None = None,
         output_dir: Path | str | None = None,
         output_path: Path | str | None = None,
     ) -> AnalysisOutcome:
@@ -78,13 +76,14 @@ class SmartTableAnalyzer:
             max_checks=self.max_checks,
             snapshot_id=snapshot_id,
         )
-        logger.info(
-            "Investigation %s started for %s", investigation_id, table_name,
-            extra={"investigation_id": investigation_id},
-        )
+        logger.info("Investigation %s started for %s", investigation_id, table_name,
+                    extra={"investigation_id": investigation_id})
+        self._progress("collecting_metadata", "Collecting Iceberg metadata", investigation_id)
 
         try:
-            context = self._collect(table_name, catalog_name, schema_name, snapshot_id)
+            context = self._collect(
+                table_name, catalog_name, schema_name, snapshot_id, query_metrics_table
+            )
             context.investigation_id = investigation_id
             self.db.record_baseline_score(
                 investigation_id,
@@ -94,17 +93,21 @@ class SmartTableAnalyzer:
                 {"partition_analysis": context.metadata.get("partition_analysis", {})},
             )
 
+            self._progress("investigating", "Running evidence checks", investigation_id)
             result = self._investigate(investigation_id, context)
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Investigation failed before conclusions were reached",
                 extra={"investigation_id": investigation_id},
             )
             self.db.complete_investigation(investigation_id, "failed")
+            self._progress("error", str(exc), investigation_id)
             raise
 
         unvalidated = self._count_unvalidated(investigation_id)
+        self._progress("rendering_report", "Rendering the investigation report", investigation_id)
         report_path = self._write_report(investigation_id, output_dir, output_path)
+        self._progress("report_complete", "Investigation report is ready", investigation_id)
 
         return AnalysisOutcome(
             investigation_id=investigation_id,
@@ -114,20 +117,27 @@ class SmartTableAnalyzer:
             unvalidated_findings=unvalidated,
         )
 
-    # ---------------------------------------------------------------- stages
+    def _progress(self, stage: str, message: str, investigation_id: int) -> None:
+        if self.progress is not None:
+            self.progress(AnalysisProgress(stage, message, investigation_id))
 
     def _collect(
-        self, table_name: str, catalog_name: str, schema_name: str, snapshot_id: str | None
+        self,
+        table_name: str,
+        catalog_name: str,
+        schema_name: str,
+        snapshot_id: str | None,
+        query_metrics_table: str | None,
     ) -> InvestigationContext:
-        """Stage 1 — the only Spark metadata read in the whole pipeline."""
+        """Read metadata once and produce the deterministic source of truth."""
         return LegacyAnalyzer(self.spark, self.metadata_profile).collect(
-            table_name, catalog_name, schema_name, snapshot_id
+            table_name, catalog_name, schema_name, snapshot_id, query_metrics_table
         )
 
     def _investigate(
         self, investigation_id: int, context: InvestigationContext
     ) -> InvestigationResult:
-        """Stage 2 — mandatory. Every conclusion comes from here."""
+        """Run mandatory evidence-backed investigation checks."""
         workbench = self._build_workbench(context)
         investigator = Investigator(
             llm=self.llm,
@@ -144,7 +154,7 @@ class SmartTableAnalyzer:
         )
 
     def _build_workbench(self, context: InvestigationContext) -> QueryWorkbench:
-        """Spark access for evidence queries only — reusing the cached metadata."""
+        """Build evidence-query access using the cached metadata context."""
         hooks = create_investigation_hooks(
             [context.catalog_name] if context.catalog_name else None,
             [context.schema_name] if context.schema_name else None,

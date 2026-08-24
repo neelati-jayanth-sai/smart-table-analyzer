@@ -39,12 +39,13 @@ class LegacyAnalyzer:
         catalog_name: str = "",
         schema_name: str = "",
         snapshot_id: str | None = None,
+        query_metrics_table: str | None = None,
     ) -> InvestigationContext:
         """Read the table once and return the investigation's source of truth."""
         logger.info("Legacy Analyzer: collecting %s", table_name)
 
         raw = collect_raw_metrics(self.spark, table_name)
-        patterns = extract_query_patterns(self.spark, table_name)
+        patterns = extract_query_patterns(self.spark, table_name, query_metrics_table)
         metadata = load_table_metadata(
             self.spark,
             table_name,

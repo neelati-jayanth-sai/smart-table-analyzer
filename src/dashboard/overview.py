@@ -6,32 +6,31 @@ import pandas as pd
 import streamlit as st
 
 from src.dashboard.report_store import InvestigationReportStore
+from src.dashboard.report_store import RunIndex
 from src.dashboard.view_models import signal_rows
 from src.models import InvestigationReport
 
 
-def render(report: InvestigationReport, store: InvestigationReportStore) -> None:
-    """Render the concise assessment and its freshness context."""
+def render(report: InvestigationReport, store: InvestigationReportStore, run: RunIndex) -> None:
+    """Render current table health or a compact historic-report notice."""
+    if report.assessment.state == "incomplete":
+        _render_historic_report(report, run)
+        return
+
     state = report.assessment.state.replace("_", " ").title()
-    st.subheader(f"Assessment: {state}")
+    st.subheader("Table health")
+    st.caption(f"{report.table_name} · {state}")
     for reason in report.assessment.reasons:
         st.warning(reason) if report.assessment.state != "clean" else st.success(reason)
 
     left, middle, right = st.columns(3)
     left.metric("Health score", _score(report))
     middle.metric("Validated findings", str(report.summary["validated_findings"]))
-    right.metric("Checks recorded", str(report.summary["total_findings"]))
+    right.metric("Evidence checks", str(report.summary["total_findings"]))
 
-    st.markdown("### Freshness")
-    st.caption(
-        f"Snapshot: {report.snapshot_id or 'not pinned'} · "
-        f"Started: {report.started_at} · Finalized: {report.completed_at or 'not finalized'} · "
-        f"Report fingerprint: `{store.fingerprint(report)}`"
-    )
-    if report.assessment.state == "incomplete":
-        st.caption("The recorded score is excluded until this run is assessed again.")
     _render_signals(report)
     _render_next_step(report)
+    _render_run_details(report, store, run)
 
 
 def _score(report: InvestigationReport) -> str:
@@ -47,6 +46,29 @@ def _render_signals(report: InvestigationReport) -> None:
         return
     st.markdown("### Measured conditions")
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+
+
+def _render_run_details(
+    report: InvestigationReport, store: InvestigationReportStore, run: RunIndex
+) -> None:
+    with st.expander("Run details"):
+        st.caption(
+            f"Snapshot: {report.snapshot_id or 'not pinned'} · Started: {report.started_at} · "
+            f"Finalized: {report.completed_at or 'not finalized'} · "
+            f"Report ID: `{store.fingerprint(report)}` · Source: {run.source}"
+        )
+
+
+def _render_historic_report(report: InvestigationReport, run: RunIndex) -> None:
+    st.info(
+        "Historical report — its assessment is not part of the current dashboard status. "
+        "Use Findings or Evidence to inspect it, or start a new investigation above."
+    )
+    with st.expander("Historic report details"):
+        st.caption(
+            f"{report.table_name} · {run.source} · "
+            f"Finalized: {report.completed_at or 'not finalized'}"
+        )
 
 
 def _render_next_step(report: InvestigationReport) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from src.dashboard import InvestigationReportStore
+from src.dashboard import InvestigationReportStore, RunIndex, default_run_index
 from src.dashboard.view_models import finding_rows, signal_rows
 from src.reporting import ReportAssembler
 from tests.test_investigator_scenarios import build
@@ -91,3 +91,27 @@ def test_store_prefers_latest_report_artifact_and_recovers_snapshot(tmp_path):
     assert run.source == "report artifact"
     assert report.snapshot_id == "987654"
     assert report.assessment.state == "incomplete"
+
+
+def test_dashboard_defaults_to_completed_database_run_before_historic_artifact():
+    historic = RunIndex(
+        investigation_id=7,
+        run_id="historic",
+        table_name="cat.sch.orders",
+        lifecycle_state="completed",
+        started_at="2026-08-24 10:00:00",
+        completed_at="2026-08-24 10:11:00",
+        source="report artifact",
+    )
+    current = RunIndex(
+        investigation_id=8,
+        run_id="current",
+        table_name="cat.sch.orders",
+        lifecycle_state="completed",
+        started_at="2026-08-23 10:00:00",
+        completed_at="2026-08-23 10:11:00",
+        source="database",
+    )
+
+    assert default_run_index([historic, current]) == 1
+    assert default_run_index([historic, current], preferred_id=7) == 0

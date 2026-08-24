@@ -117,7 +117,9 @@ def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
     return results
 
 
-def extract_query_patterns(spark, table_name: str) -> dict[str, Any] | None:
+def extract_query_patterns(
+    spark, table_name: str, query_metrics_table: str | None = None
+) -> dict[str, Any] | None:
     """Read the IOMETE query log workload profile; None when unavailable."""
     try:
         from src.metadata.query_patterns import IOMETEQueryPatternAdapter
@@ -125,7 +127,7 @@ def extract_query_patterns(spark, table_name: str) -> dict[str, Any] | None:
         adapter = IOMETEQueryPatternAdapter(spark)
         if not adapter.is_available():
             return None
-        metrics_table = os.getenv("IOMETE_QUERY_METRICS_TABLE", table_name)
+        metrics_table = query_metrics_table or os.getenv("IOMETE_QUERY_METRICS_TABLE", table_name)
         patterns = adapter.extract_patterns(metrics_table)
         return {
             "avg_cpu_time_ns": patterns.avg_cpu_time_ns,
