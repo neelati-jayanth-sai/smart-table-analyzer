@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.database import investigation_db_path
 
 
 def main() -> None:
     """Run comprehensive verification tests."""
     repo_root = Path(__file__).resolve().parents[1]
-    db_path = repo_root / "investigation.db"
+    db_path = investigation_db_path(repo_root)
     
     print("=" * 70)
     print("KNOWLEDGE BASE SYSTEM VERIFICATION")

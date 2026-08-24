@@ -13,6 +13,7 @@ from typing import Any
 from src.query.query_workbench import _json_safe
 
 from src.metadata.columns import analyze_columns
+from src.metadata.collection_profile import MetadataCollectionProfile
 from src.metadata.partitions import analyze_partitioning
 from src.metadata.properties import load_table_properties
 
@@ -48,30 +49,36 @@ def load_table_metadata(
     spark,
     table_name: str,
     row_count: int = 0,
-    analyze_column_stats: bool = True,
+    profile: MetadataCollectionProfile | None = None,
 ) -> dict[str, Any]:
-    """Read schema, Iceberg metadata tables, properties, and column stats once.
+    """Read schema, Iceberg metadata tables, and optional deep data profiling.
 
     Every sub-read is individually guarded: a table that does not expose
     `.partitions` still yields usable metadata for everything else.
     """
     logger.info("Loading metadata for %s", table_name)
 
-    metadata: dict[str, Any] = {"table_name": table_name}
+    collection_profile = profile or MetadataCollectionProfile.from_name(None)
+    metadata: dict[str, Any] = {
+        "table_name": table_name,
+        "collection_profile": collection_profile.name,
+    }
 
     metadata["columns"] = _columns_of(spark, table_name)
     for suffix in METADATA_SUFFIXES:
         metadata[suffix] = {"columns": _columns_of(spark, f"{table_name}.{suffix}")}
 
-    metadata["sample_rows"] = _sample_rows(spark, table_name)
+    metadata["sample_rows"] = (
+        _sample_rows(spark, table_name) if collection_profile.include_sample_rows else []
+    )
     metadata["table_properties"] = load_table_properties(spark, table_name)
 
-    if analyze_column_stats and row_count > 0 and metadata["columns"]:
+    if collection_profile.analyze_column_stats and row_count > 0 and metadata["columns"]:
         metadata["column_analysis"] = analyze_columns(
             spark, table_name, metadata["columns"], row_count
         )
     else:
-        metadata["column_analysis"] = {}
+        metadata["column_analysis"] = {"status": "not_collected_in_fast_profile"}
 
     metadata["partition_analysis"] = analyze_partitioning(spark, table_name, metadata)
 

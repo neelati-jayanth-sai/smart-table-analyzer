@@ -25,7 +25,7 @@ load_dotenv(repo_root / ".env")
 from scripts import _investigation_cli as cli
 from src.analyzer.pipeline import SmartTableAnalyzer
 from src.connectors import DellAIAAdapter
-from src.database import InvestigationDb
+from src.database import InvestigationDb, resolve_investigation_db_path
 from src.database.knowledge_store import KnowledgeStore
 
 
@@ -35,11 +35,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--catalog", default=os.getenv("IOMETE_CATALOG"), help="Catalog override")
     parser.add_argument("--schema", default=os.getenv("IOMETE_NAMESPACE"), help="Schema override")
     parser.add_argument("--alation-table", default=None, help="Actual table name in Alation (for replica tables)")
-    parser.add_argument("--db", default="data/investigation.db", help="SQLite database path")
+    parser.add_argument("--db", default=None, help="Optional SQLite database override")
     parser.add_argument("--max-checks", type=int, default=5, help="Maximum investigation checks")
     parser.add_argument("--snapshot", default=None, help="Optional snapshot ID to pin")
     parser.add_argument("--query-metrics-table", default=None, dest="query_metrics_table",
                         help="Production table name to use for IOMETE query log metrics (defaults to --table)")
+    parser.add_argument("--metadata-profile", choices=("fast", "deep"), default=None,
+                        help="Collection profile; fast is metadata-only (default), deep reads table data")
     parser.add_argument("--output", default=None, help="Optional report output path")
     parser.add_argument("--log-level", default=None, help="Logging level (default LOG_LEVEL or INFO)")
     return parser.parse_args()
@@ -70,7 +72,7 @@ def main() -> int:
         print(f"Pinning investigation to snapshot {snapshot_id}")
 
     try:
-        db_path = repo_root / args.db
+        db_path = resolve_investigation_db_path(repo_root, args.db)
         db = InvestigationDb(db_path)
         print(f"Seeded {cli.seed_knowledge(db_path, repo_root)} knowledge entries")
 
@@ -87,6 +89,7 @@ def main() -> int:
             knowledge=KnowledgeStore(db_path, repo_root=repo_root),
             max_checks=args.max_checks,
             max_retries=int(os.getenv("MAX_CHECK_RETRIES", "3")),
+            metadata_profile=args.metadata_profile,
         )
 
         print(f"Investigating {table_name}...")

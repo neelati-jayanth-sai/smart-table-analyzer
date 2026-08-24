@@ -42,6 +42,8 @@ def score(raw_metrics: dict[str, Any],
         "partition_count": raw_metrics.get("partition_count", 0),
         "snapshot_count": raw_metrics.get("snapshot_count", 0),
         "is_empty": bool(raw_metrics.get("is_empty", False)),
+        "row_count_source": raw_metrics.get("row_count_source", "unknown"),
+        "row_count_is_exact": bool(raw_metrics.get("row_count_is_exact", False)),
         "unavailable_metrics": list(raw_metrics.get("failed_metrics") or []),
     })
 

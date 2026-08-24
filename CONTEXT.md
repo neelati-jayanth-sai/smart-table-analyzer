@@ -5,14 +5,19 @@
 - `knowledge/iceberg` is curated Apache Iceberg knowledge.
 - `knowledge/iomete` is curated IOMETE platform knowledge.
 - `knowledge/runbooks` is curated team operating knowledge.
+- `knowledge/runbooks/validated-workload-profiles.md` is the authority for the
+  team-verified 2026-08-24 ingestion and consumption profiles. File size,
+  row-group size, distribution mode, partitioning, and compaction are
+  conditional rules selected from measured table/workload evidence, not global
+  defaults. The runbooks supersede generic vendor guidance where they apply.
 
 ## SQLite-backed knowledge retrieval seam
 
 - `scripts/retrieve_knowledge.py` is the small interface (CLI).
 - `scripts/knowledge_retrieval.py` exposes deterministic `list_knowledge_paths` and `fetch_knowledge_path` over SQLite index.
-- `investigation.db` holds knowledge index (topic path → current version) per Architecture.md §5.
+- `data/investigation.db` is the authoritative knowledge index (topic path → current version) per Architecture.md §5; an explicit database path is supported only as a test or CLI override.
 - `scripts/init_knowledge_db.py` scans authored entries and populates knowledge_index table.
-- Authored knowledge lives in `knowledge/<source>/*.md` - one file per topic, 50-200 lines each.
+- Authored knowledge lives in `knowledge/<source>/*.md` - one file per topic, 50-200 lines each. README inventories are documentation only and are excluded from seeding and deterministic fallback retrieval.
 - List returns topic paths + descriptions; Fetch returns full markdown text.
 - Clean structure: only production .md files, no intermediate artifacts.
 
@@ -72,8 +77,10 @@
 ## Analysis pipeline seam
 
 - `src/analyzer/legacy_analyzer.py` is the deterministic sensor layer: `LegacyAnalyzer.collect(table)` reads Iceberg metadata once and returns an `InvestigationContext` of metadata, signals, and baseline. It never calls an LLM and never recommends.
-- `collect_raw_metrics` retains partition-storage facts (partition byte and file-count distribution) alongside row skew; `analyze_partitioning` captures the available `SHOW CREATE TABLE` DDL and its partition spec.
-- `detect_signals` turns measured facts into `{name, severity, detail, metrics}` signals (small_files, undersized_partitions, partition_skew, unpartitioned, missing_sort_order, delete_overhead, manifest_health, snapshot_retention, table_property_naming, poor_pruning, measurement_unavailable, empty_table). `undersized_partitions` means average partition capacity is below the 128 MB file target; it warrants testing a coarser partition transform, but does not by itself prove that daily pruning is inappropriate. Unavailable measurements always require review rather than silently becoming zero-valued facts.
+- `collect_raw_metrics` retains partition-storage facts (partition byte and file-count distribution) alongside row skew without scanning the base table: it batches `.files`, `.partitions`, and `.snapshots` aggregates. Its `row_count` is the current data-file `record_count` estimate, with explicit provenance, rather than an exact delete-aware `COUNT(*)`.
+- `src/metadata/collection_profile.py::MetadataCollectionProfile` is the collection Interface. `fast` is the default and reads catalog/Iceberg metadata only: it skips base-table samples and per-column distinct/null scans. `deep` is an explicit opt-in (`--metadata-profile deep` or `METADATA_COLLECTION_PROFILE=deep`) that permits those data reads. This keeps the ordinary collection path bounded by metadata size, not table size.
+- `detect_signals` turns measured facts into `{name, severity, detail, metrics}` signals (small_files, undersized_partitions, partition_skew, unpartitioned, missing_sort_order, delete_overhead, manifest_health, snapshot_retention, table_property_naming, custom_property_naming, poor_pruning, measurement_unavailable, empty_table). `undersized_partitions` means average partition capacity is below the 128 MB file target; it warrants testing a coarser partition transform, but does not by itself prove that daily pruning is inappropriate. Unavailable measurements always require review rather than silently becoming zero-valued facts.
+- `src/metadata/properties.py` is the table-property casing seam. It preserves exact catalog keys in `raw_properties` and exposes only exact lowercase keys as effective `properties`; it never turns a mixed-case lookalike into an active setting. Known Iceberg/team configuration keys with noncanonical casing produce a high-severity `table_property_naming` signal, while unknown custom names remain a low-severity caution. Canonical-plus-variant pairs are recorded as collisions for report evidence.
 - High-severity deterministic signals are assessment evidence, not LLM instructions: they lower the baseline score, persist with it, and require a review warning even when an LLM check returns `not_found`. A lifecycle status of `completed` means checks finished; it never means the table is healthy.
 - `src/analyzer/pipeline.py` is the single execution path: Legacy Analyzer -> Context Manager -> Investigator -> Evidence -> Report. There is no branch that skips the Investigator.
 - `SmartTableAnalyzer` receives and reuses an already-established Spark session; the CLI only stops sessions it created. Evidence queries use Spark Connect tag-scoped interruption when the connector supports it, and otherwise report timeout cancellation as unconfirmed rather than claiming the action stopped.

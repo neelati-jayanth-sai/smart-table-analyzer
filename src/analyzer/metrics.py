@@ -1,4 +1,4 @@
-"""Deterministic metric collection: one parallel pass over Iceberg metadata.
+"""Deterministic metric collection from Iceberg metadata tables.
 
 Reads only. No interpretation of what the numbers mean lives here.
 """
@@ -21,19 +21,6 @@ class MetadataUnavailable(RuntimeError):
     """
 
 
-_FAILED = object()
-
-
-def _scalar(spark, query: str) -> Any:
-    """Run one read-only aggregate, returning `_FAILED` if the query errors."""
-    try:
-        row = spark.sql(query).first()
-        return row[0] if row is not None and row[0] is not None else 0
-    except Exception as exc:
-        logger.info("Metric query failed (%s): %s", query, exc)
-        return _FAILED
-
-
 def _row(spark, query: str) -> dict[str, Any]:
     try:
         row = spark.sql(query).first()
@@ -44,31 +31,71 @@ def _row(spark, query: str) -> dict[str, Any]:
 
 
 def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
-    """Read the deterministic table metrics. One parallel pass, no retries."""
+    """Read deterministic metrics without scanning the base table.
+
+    ``row_count`` is the current data-file record-count estimate. Delete files
+    can make it differ from the exact logical row count, so its provenance is
+    returned with the result instead of presenting it as a scanned count.
+    """
     queries = {
-        "row_count": f"SELECT COUNT(*) FROM {table_name}",
-        "num_data_files": f"SELECT COUNT(*) FROM {table_name}.files WHERE content = 0",
-        "total_data_file_bytes": (
-            f"SELECT COALESCE(SUM(file_size_in_bytes),0) FROM {table_name}.files WHERE content=0"
+        "data_file_stats": (
+            f"SELECT COALESCE(SUM(record_count),0) AS row_count,"
+            f" COUNT(*) AS num_data_files,"
+            f" COALESCE(SUM(file_size_in_bytes),0) AS total_data_file_bytes,"
+            f" COUNT(DISTINCT sort_order_id) AS distinct_sort_orders"
+            f" FROM {table_name}.files WHERE content=0"
         ),
-        "delete_bytes": (
-            f"SELECT COALESCE(SUM(file_size_in_bytes),0) FROM {table_name}.files WHERE content!=0"
+        "delete_file_stats": (
+            f"SELECT COALESCE(SUM(file_size_in_bytes),0) AS delete_bytes"
+            f" FROM {table_name}.files WHERE content!=0"
         ),
-        "partition_count": f"SELECT COUNT(*) FROM {table_name}.partitions",
-        "snapshot_count": f"SELECT COUNT(*) FROM {table_name}.snapshots",
-        "distinct_sort_orders": (
-            f"SELECT COUNT(DISTINCT sort_order_id) FROM {table_name}.files WHERE content=0"
+        "partition_stats": (
+            f"SELECT COUNT(*) AS num_partitions, MAX(record_count) AS max_rows,"
+            f" MIN(record_count) AS min_rows, AVG(record_count) AS avg_rows,"
+            f" MAX(file_count) AS max_files,"
+            f" AVG(total_data_file_size_in_bytes) AS avg_partition_bytes,"
+            f" MIN(total_data_file_size_in_bytes) AS min_partition_bytes,"
+            f" MAX(total_data_file_size_in_bytes) AS max_partition_bytes,"
+            f" AVG(file_count) AS avg_files_per_partition,"
+            f" MAX(file_count) AS max_files_per_partition"
+            f" FROM {table_name}.partitions"
         ),
+        "snapshot_count": f"SELECT COUNT(*) AS snapshot_count FROM {table_name}.snapshots",
     }
 
-    results: dict[str, int] = {key: 0 for key in queries}
+    results: dict[str, Any] = {
+        "row_count": 0,
+        "num_data_files": 0,
+        "total_data_file_bytes": 0,
+        "delete_bytes": 0,
+        "partition_count": 0,
+        "snapshot_count": 0,
+        "distinct_sort_orders": 0,
+        "row_count_source": "iceberg_data_file_record_counts",
+        "row_count_is_exact": False,
+    }
     failed: set[str] = set()
     for key, query in queries.items():
-        value = _scalar(spark, query)
-        if value is _FAILED:
+        value = _row(spark, query)
+        if not value:
             failed.add(key)
         else:
-            results[key] = int(value or 0)
+            if key == "partition_stats":
+                results["partition_count"] = int(value.get("num_partitions", 0) or 0)
+                results["partition_stats"] = {
+                    name: value.get(name, 0)
+                    for name in ("max_rows", "min_rows", "avg_rows", "max_files")
+                }
+                results["partition_storage"] = {
+                    name: value.get(name, 0)
+                    for name in (
+                        "avg_partition_bytes", "min_partition_bytes", "max_partition_bytes",
+                        "avg_files_per_partition", "max_files_per_partition",
+                    )
+                }
+            else:
+                for name, metric in value.items():
+                    results[name] = int(metric or 0)
 
     if len(failed) == len(queries):
         raise MetadataUnavailable(
@@ -80,29 +107,10 @@ def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
             "%d of %d metric queries failed for %s: %s",
             len(failed), len(queries), table_name, ", ".join(sorted(failed)),
         )
-
-    results["partition_stats"] = _row(
-        spark,
-        f"SELECT MAX(record_count) AS max_rows, MIN(record_count) AS min_rows,"
-        f" AVG(record_count) AS avg_rows, MAX(file_count) AS max_files"
-        f" FROM {table_name}.partitions",
-    )
-    results["partition_storage"] = _row(
-        spark,
-        f"SELECT AVG(total_data_file_size_in_bytes) AS avg_partition_bytes,"
-        f" MIN(total_data_file_size_in_bytes) AS min_partition_bytes,"
-        f" MAX(total_data_file_size_in_bytes) AS max_partition_bytes,"
-        f" AVG(file_count) AS avg_files_per_partition,"
-        f" MAX(file_count) AS max_files_per_partition"
-        f" FROM {table_name}.partitions",
-    )
-    for name in ("partition_stats", "partition_storage"):
-        if not results[name]:
-            failed.add(name)
     results["failed_metrics"] = sorted(failed)
-    # Only a table that actually answered both counts can be called empty.
+    # Only a table that answered both metadata metrics can be called empty.
     results["is_empty"] = (
-        not {"row_count", "num_data_files"} & failed
+        "data_file_stats" not in failed
         and results["row_count"] == 0
         and results["num_data_files"] == 0
     )

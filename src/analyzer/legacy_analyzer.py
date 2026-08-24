@@ -16,6 +16,7 @@ import logging
 from src.calculators.baseline_scorer import score as compute_score
 from src.context import InvestigationContext
 from src.metadata.loader import load_table_metadata
+from src.metadata.collection_profile import MetadataCollectionProfile
 
 from .metrics import MetadataUnavailable, collect_raw_metrics, extract_query_patterns
 from .signals import detect_signals
@@ -28,8 +29,9 @@ __all__ = ["LegacyAnalyzer", "MetadataUnavailable"]
 class LegacyAnalyzer:
     """Collect Iceberg metadata once and turn it into an InvestigationContext."""
 
-    def __init__(self, spark):
+    def __init__(self, spark, metadata_profile: MetadataCollectionProfile | None = None):
         self.spark = spark
+        self.metadata_profile = metadata_profile or MetadataCollectionProfile.from_name(None)
 
     def collect(
         self,
@@ -44,7 +46,10 @@ class LegacyAnalyzer:
         raw = collect_raw_metrics(self.spark, table_name)
         patterns = extract_query_patterns(self.spark, table_name)
         metadata = load_table_metadata(
-            self.spark, table_name, row_count=int(raw.get("row_count", 0))
+            self.spark,
+            table_name,
+            row_count=int(raw.get("row_count", 0)),
+            profile=self.metadata_profile,
         )
         if patterns:
             metadata["query_patterns"] = patterns

@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.database import InvestigationDb
+from src.database import InvestigationDb, resolve_investigation_db_path
 
 
 def compute_version(content: str) -> str:
@@ -42,6 +42,8 @@ def scan_knowledge_entries(repo_root: Path) -> list[dict[str, str]]:
         if not source_path.exists():
             continue
         for md_file in source_path.glob("*.md"):
+            if md_file.name.casefold() == "readme.md":
+                continue
             topic_path = md_file.stem
             content = md_file.read_text(encoding="utf-8")
             content_path = md_file.relative_to(repo_root).as_posix()
@@ -108,11 +110,11 @@ def print_summary(db_path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", default="data/investigation.db")
+    parser.add_argument("--db", default=None, help="Optional SQLite database override")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
-    db_path = repo_root / args.db
+    db_path = resolve_investigation_db_path(repo_root, args.db)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Initializing investigation database: {db_path}")

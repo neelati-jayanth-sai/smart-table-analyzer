@@ -108,6 +108,16 @@ class TestSignalDetection:
         assert signal["metrics"]["avg_file_bytes"] == int(table.avg_file_bytes)
         assert signal["metrics"]["num_data_files"] == 3000
 
+    def test_mis_cased_iceberg_property_is_a_high_severity_report_signal(self):
+        _, context = context_for("table_property_naming")
+        signal = next(
+            signal
+            for signal in context.signals
+            if signal["name"] == "table_property_naming"
+        )
+        assert signal["severity"] == "HIGH"
+        assert signal["metrics"]["canonical_properties"] == ["write.target-file-size-bytes"]
+
     def test_signals_never_carry_a_recommendation(self):
         """The Legacy Analyzer measures; only the Investigator prescribes."""
         banned = ("should", "recommend", "consider", "run optimize", "you must")
@@ -281,8 +291,8 @@ class TestInvestigationPerScenario:
     def test_metadata_is_read_once_per_investigation(self, tmp_path):
         table, spark, _, _, analyzer = build("partition_skew", tmp_path, max_checks=3)
         analyzer.analyze(table.name, "cat", "sch")
-        assert spark.table_reads.count(table.name) == 2, (
-            f"base table schema + sample only; got {spark.table_reads}"
+        assert spark.table_reads.count(table.name) == 1, (
+            f"fast profile reads the base schema only; got {spark.table_reads}"
         )
         for suffix in ("files", "partitions", "snapshots", "history"):
             assert spark.table_reads.count(f"{table.name}.{suffix}") == 1

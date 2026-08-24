@@ -7,7 +7,12 @@ per Architecture.md §5 requirements. Maintains backward compatibility with exis
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.database import investigation_db_path
 
 
 def list_knowledge_paths(
@@ -29,7 +34,7 @@ def list_knowledge_paths(
     Returns:
         Dict with source, matched count, and list of paths with descriptions
     """
-    db_path = repo_root / "investigation.db"
+    db_path = investigation_db_path(repo_root)
     if not db_path.exists():
         raise ValueError(f"Knowledge database not found: {db_path}")
     
@@ -100,7 +105,7 @@ def fetch_knowledge_path(
     Returns:
         Dict with source, path, description, version, and full text
     """
-    db_path = repo_root / "investigation.db"
+    db_path = investigation_db_path(repo_root)
     if not db_path.exists():
         raise ValueError(f"Knowledge database not found: {db_path}")
     

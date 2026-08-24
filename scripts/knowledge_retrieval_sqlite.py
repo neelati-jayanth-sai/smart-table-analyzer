@@ -7,7 +7,12 @@ per Architecture.md §5 requirements.
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.database import investigation_db_path
 
 
 def list_knowledge_paths(
@@ -21,7 +26,7 @@ def list_knowledge_paths(
     Returns topic paths with one-line descriptions. Never returns full content.
     Implements Architecture.md §5 list operation.
     """
-    db_path = repo_root / "investigation.db"
+    db_path = investigation_db_path(repo_root)
     if not db_path.exists():
         raise ValueError(f"Knowledge database not found: {db_path}")
     
@@ -84,7 +89,7 @@ def fetch_knowledge_path(
     
     Returns full text of entry. Implements Architecture.md §5 fetch operation.
     """
-    db_path = repo_root / "investigation.db"
+    db_path = investigation_db_path(repo_root)
     if not db_path.exists():
         raise ValueError(f"Knowledge database not found: {db_path}")
     

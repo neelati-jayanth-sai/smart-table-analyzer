@@ -7,9 +7,10 @@ from pathlib import Path
 import streamlit as st
 
 from src.dashboard import InvestigationReportStore
+from src.database import investigation_db_path
 from src.dashboard import audit, evidence, findings, history, overview
 
-DB_PATH = Path("data/investigation.db")
+DB_PATH = investigation_db_path(Path(__file__).resolve().parent)
 PAGES = ("Overview", "Findings", "Evidence", "History", "Audit")
 
 

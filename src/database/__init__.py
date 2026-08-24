@@ -4,5 +4,13 @@ from src.models import Finding, Investigation
 
 from .investigation_db import InvestigationDb
 from .knowledge_store import KnowledgeStore
+from .paths import investigation_db_path, resolve_investigation_db_path
 
-__all__ = ["Finding", "Investigation", "InvestigationDb", "KnowledgeStore"]
+__all__ = [
+    "Finding",
+    "Investigation",
+    "InvestigationDb",
+    "KnowledgeStore",
+    "investigation_db_path",
+    "resolve_investigation_db_path",
+]

@@ -31,7 +31,7 @@ class KnowledgeStore:
         """Return index entries for a source, optionally filtered by path prefix."""
         sql = (
             "SELECT source, topic_path, version, description, content_path"
-            " FROM knowledge_index WHERE source = ?"
+            " FROM knowledge_index WHERE source = ? AND lower(topic_path) <> 'readme'"
         )
         params: tuple = (source,)
         if prefix:
@@ -49,6 +49,8 @@ class KnowledgeStore:
         Returns an empty dict when the entry or its file is missing, so callers
         can skip it rather than fail the investigation.
         """
+        if topic_path.casefold() == "readme":
+            return {}
         rows = self._query(
             "SELECT source, topic_path, version, description, content_path"
             " FROM knowledge_index WHERE source = ? AND topic_path = ?",

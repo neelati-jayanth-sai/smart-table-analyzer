@@ -55,7 +55,7 @@ class KnowledgeRetriever:
             return []
         matches: list[tuple[str, str, str]] = []
         for path in self._repo_root.glob("knowledge/**/*.md"):
-            if path.name in ("README.md", ".gitkeep"):
+            if path.name.casefold() in ("readme.md", ".gitkeep"):
                 continue
             content = path.read_text(encoding="utf-8")
             content_lower = content.lower()

@@ -21,6 +21,7 @@ from src.investigator.investigator import InvestigationResult
 from src.query import QueryWorkbench, create_investigation_hooks
 from src.reporting import ReportAssembler, ReportWriter
 from src.validation import ClaimValidator
+from src.metadata.collection_profile import MetadataCollectionProfile
 
 from .legacy_analyzer import LegacyAnalyzer
 
@@ -48,6 +49,7 @@ class SmartTableAnalyzer:
         max_checks: int = 5,
         max_retries: int = 3,
         max_workers: int = 1,
+        metadata_profile: str | None = None,
     ):
         self.spark = spark
         self.db = db
@@ -56,6 +58,7 @@ class SmartTableAnalyzer:
         self.max_checks = max_checks
         self.max_retries = max_retries
         self.max_workers = max_workers
+        self.metadata_profile = MetadataCollectionProfile.from_name(metadata_profile)
 
     def analyze(
         self,
@@ -117,7 +120,7 @@ class SmartTableAnalyzer:
         self, table_name: str, catalog_name: str, schema_name: str, snapshot_id: str | None
     ) -> InvestigationContext:
         """Stage 1 — the only Spark metadata read in the whole pipeline."""
-        return LegacyAnalyzer(self.spark).collect(
+        return LegacyAnalyzer(self.spark, self.metadata_profile).collect(
             table_name, catalog_name, schema_name, snapshot_id
         )
 

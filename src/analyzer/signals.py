@@ -36,6 +36,10 @@ def detect_signals(
         return [_signal("empty_table", "HIGH", "Table has 0 rows and 0 data files")]
 
     failed_metrics = raw.get("failed_metrics") or []
+    data_file_stats_available = "data_file_stats" not in failed_metrics
+    partition_stats_available = "partition_stats" not in failed_metrics
+    delete_file_stats_available = "delete_file_stats" not in failed_metrics
+    snapshot_count_available = "snapshot_count" not in failed_metrics
     if failed_metrics:
         signals.append(
             _signal(
@@ -50,7 +54,7 @@ def detect_signals(
     total_bytes = int(raw.get("total_data_file_bytes", 0))
     avg_bytes = total_bytes / num_files if total_bytes else 0
 
-    if avg_bytes and avg_bytes < TARGET_FILE_BYTES * _SMALL_FILE_RATIO:
+    if data_file_stats_available and avg_bytes and avg_bytes < TARGET_FILE_BYTES * _SMALL_FILE_RATIO:
         severity = "HIGH" if avg_bytes < TARGET_FILE_BYTES * 0.1 else "MEDIUM"
         signals.append(
             _signal(
@@ -62,7 +66,7 @@ def detect_signals(
                 num_data_files=num_files,
             )
         )
-    elif avg_bytes > TARGET_FILE_BYTES * _LARGE_FILE_RATIO:
+    elif data_file_stats_available and avg_bytes > TARGET_FILE_BYTES * _LARGE_FILE_RATIO:
         signals.append(
             _signal(
                 "large_files",
@@ -74,7 +78,7 @@ def detect_signals(
 
     storage = raw.get("partition_storage") or {}
     avg_partition_bytes = float(storage.get("avg_partition_bytes") or 0)
-    if avg_partition_bytes and avg_partition_bytes < TARGET_FILE_BYTES:
+    if partition_stats_available and avg_partition_bytes and avg_partition_bytes < TARGET_FILE_BYTES:
         severity = "HIGH" if avg_partition_bytes < TARGET_FILE_BYTES * 0.1 else "MEDIUM"
         signals.append(
             _signal(
@@ -91,7 +95,7 @@ def detect_signals(
     stats = raw.get("partition_stats") or {}
     max_rows = float(stats.get("max_rows") or 0)
     avg_rows = float(stats.get("avg_rows") or 0)
-    if avg_rows > 0 and max_rows > 0:
+    if partition_stats_available and avg_rows > 0 and max_rows > 0:
         ratio = max_rows / avg_rows
         if ratio >= _SKEW_MEDIUM:
             signals.append(
@@ -106,13 +110,13 @@ def detect_signals(
             )
 
     partition_count = int(raw.get("partition_count", 0))
-    if "partition_count" not in failed_metrics and partition_count <= 1:
+    if partition_stats_available and partition_count <= 1:
         signals.append(
             _signal("unpartitioned", "MEDIUM", "Table exposes a single partition or none",
                     partition_count=partition_count)
         )
 
-    if int(raw.get("distinct_sort_orders", 0)) <= 1:
+    if data_file_stats_available and int(raw.get("distinct_sort_orders", 0)) <= 1:
         properties = (metadata.get("table_properties") or {}).get("properties") or {}
         if not properties.get("sort-order") and not properties.get("write.distribution-mode"):
             signals.append(
@@ -122,7 +126,7 @@ def detect_signals(
 
     delete_bytes = int(raw.get("delete_bytes", 0))
     all_bytes = total_bytes + delete_bytes
-    if all_bytes and delete_bytes / all_bytes > _DELETE_OVERHEAD_WARN:
+    if data_file_stats_available and delete_file_stats_available and all_bytes and delete_bytes / all_bytes > _DELETE_OVERHEAD_WARN:
         signals.append(
             _signal(
                 "delete_overhead",
@@ -132,7 +136,7 @@ def detect_signals(
             )
         )
 
-    if num_files > _MANIFEST_FILE_WARN:
+    if data_file_stats_available and num_files > _MANIFEST_FILE_WARN:
         signals.append(
             _signal("manifest_health", "MEDIUM",
                     f"{num_files:,} data files is above the {_MANIFEST_FILE_WARN:,} "
@@ -140,18 +144,39 @@ def detect_signals(
         )
 
     snapshots = int(raw.get("snapshot_count", 0))
-    if snapshots > _SNAPSHOT_WARN:
+    if snapshot_count_available and snapshots > _SNAPSHOT_WARN:
         signals.append(
             _signal("snapshot_retention", "LOW",
                     f"{snapshots:,} snapshots retained", snapshot_count=snapshots)
         )
 
     caps = (metadata.get("table_properties") or {}).get("caps_warnings") or []
-    if caps:
+    known_caps = [warning for warning in caps if warning.get("is_known_configuration")]
+    custom_caps = [warning for warning in caps if not warning.get("is_known_configuration")]
+    if known_caps:
         signals.append(
-            _signal("table_property_naming", "LOW",
-                    f"{len(caps)} table propert(ies) are not lowercase",
-                    properties=[c["property"] for c in caps])
+            _signal(
+                "table_property_naming",
+                "HIGH",
+                f"{len(known_caps)} known Iceberg configuration propert(ies) use noncanonical "
+                "casing and may be ignored",
+                properties=[warning["property"] for warning in known_caps],
+                canonical_properties=[warning["canonical_property"] for warning in known_caps],
+                collisions=[
+                    warning["property"]
+                    for warning in known_caps
+                    if warning["has_canonical_collision"]
+                ],
+            )
+        )
+    if custom_caps:
+        signals.append(
+            _signal(
+                "custom_property_naming",
+                "LOW",
+                f"{len(custom_caps)} custom table propert(ies) use noncanonical casing",
+                properties=[warning["property"] for warning in custom_caps],
+            )
         )
 
     if patterns and patterns.get("scan_queries_analyzed", 0) >= 5:
