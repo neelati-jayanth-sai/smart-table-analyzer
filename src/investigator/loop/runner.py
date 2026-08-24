@@ -35,9 +35,9 @@ def run_checks_parallel(
     nodes: "InvestigationNodes",
     state: InvestigationState,
     check_specs: list[tuple[int, str, str]],
-    max_workers: int = 5,
+    max_workers: int = 1,
 ) -> list[FindingState]:
-    """Run every planned hypothesis chain concurrently.
+    """Run planned hypothesis chains with bounded shared-session concurrency.
 
     A chain that raises is logged and skipped — one failed hypothesis never ends
     the investigation.

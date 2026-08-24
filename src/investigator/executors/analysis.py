@@ -37,5 +37,6 @@ class ResultAnalysis:
             actionable_sql=to_str_or_none(parsed.get("actionable_sql")),
             needs_followup=bool(parsed.get("needs_followup")),
             followup_question=to_str_or_none(parsed.get("followup_question")),
+            issue_state=str(parsed.get("issue_state", "needs_review")),
         )
         return validate_state({**state, "current_analysis": current_analysis})

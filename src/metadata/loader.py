@@ -8,7 +8,6 @@ Iceberg metadata reads are the dominant avoidable cost in an investigation.
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from src.query.query_workbench import _json_safe
@@ -60,15 +59,9 @@ def load_table_metadata(
 
     metadata: dict[str, Any] = {"table_name": table_name}
 
-    with ThreadPoolExecutor(max_workers=len(METADATA_SUFFIXES) + 1) as pool:
-        base = pool.submit(_columns_of, spark, table_name)
-        meta_futures = {
-            suffix: pool.submit(_columns_of, spark, f"{table_name}.{suffix}")
-            for suffix in METADATA_SUFFIXES
-        }
-        metadata["columns"] = base.result()
-        for suffix, future in meta_futures.items():
-            metadata[suffix] = {"columns": future.result()}
+    metadata["columns"] = _columns_of(spark, table_name)
+    for suffix in METADATA_SUFFIXES:
+        metadata[suffix] = {"columns": _columns_of(spark, f"{table_name}.{suffix}")}
 
     metadata["sample_rows"] = _sample_rows(spark, table_name)
     metadata["table_properties"] = load_table_properties(spark, table_name)

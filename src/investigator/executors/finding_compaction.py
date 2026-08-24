@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from src.database import Finding
+from src.models.finding import issue_state_for
 
 from src.models.state import AnalysisState, FindingState, InvestigationState
 
@@ -30,11 +31,13 @@ def build_finding_state(state: InvestigationState) -> FindingState:
         rationale="No analysis available",
         evidence_ids=[], confidence=0.0, recommendation=None, alternatives=[],
         actionable_sql=None,
+        issue_state="needs_review",
     ))
     # Remove loop-control fields that are not part of a Finding
     for internal in ("approved", "critic_feedback", "needs_followup", "followup_question"):
         analysis.pop(internal, None)
     analysis.setdefault("confidence", 0.0)
+    analysis["issue_state"] = issue_state_for(str(analysis["verdict"]))
 
     return FindingState(
         check_num=state["check_count"],
@@ -68,6 +71,7 @@ def compact_to_finding_state(
             recommendation=None, alternatives=[],
             check_type=finding.check_type,
             actionable_sql=None,
+            issue_state="needs_review",
         )
     db.record_finding(state["investigation_id"], Finding(**finding_state))
     findings = list(state.get("findings", []))

@@ -61,11 +61,22 @@
 - Section order is fixed and engineer-first: Executive Summary, Root Causes, Evidence, SQL Validation, Recommendations, Metadata Appendix.
 - `src/calculators/baseline_scorer.py::explain_score` breaks the health score into per-dimension evidence and impact rows; the report renders that table instead of a bare number.
 
+## Finalized assessment and dashboard seam
+
+- `src/reporting/assessment_policy.py::assess` is the assessment seam. It produces `clean`, `needs_review`, `action_required`, or `incomplete` independently of the investigation lifecycle. A lifecycle of `completed` only means execution finished.
+- A report stores both `lifecycle_state` and `assessment`; every consumer must project the report assessment rather than infer a health state from SQLite findings. High-severity deterministic signals prevent `clean`, and records without `assessment_version=deterministic-v1` are `incomplete` so legacy runs cannot become false green.
+- A finding's `verdict` records whether its investigation question was answered; `issue_state` separately records `issue_found`, `no_issue_found`, or `needs_review`. Only a validated `issue_found` may create a root cause, action-required assessment, or remediation action.
+- `src/dashboard/report_store.py::InvestigationReportStore` is the dashboard interface: `list_runs()` returns newest-first history and `get_report(investigation_id)` returns the one assembled report used by all screens. Its fingerprint identifies the exact report projection being displayed.
+- `src/dashboard/` renders progressive navigation in the fixed order Overview, Findings, Evidence, History, Audit. The view-model module only projects report state and measured signal thresholds; it does not derive a table assessment.
+
 ## Analysis pipeline seam
 
 - `src/analyzer/legacy_analyzer.py` is the deterministic sensor layer: `LegacyAnalyzer.collect(table)` reads Iceberg metadata once and returns an `InvestigationContext` of metadata, signals, and baseline. It never calls an LLM and never recommends.
-- `detect_signals` turns measured facts into `{name, severity, detail, metrics}` signals (small_files, partition_skew, unpartitioned, missing_sort_order, delete_overhead, manifest_health, snapshot_retention, table_property_naming, poor_pruning, empty_table).
+- `collect_raw_metrics` retains partition-storage facts (partition byte and file-count distribution) alongside row skew; `analyze_partitioning` captures the available `SHOW CREATE TABLE` DDL and its partition spec.
+- `detect_signals` turns measured facts into `{name, severity, detail, metrics}` signals (small_files, undersized_partitions, partition_skew, unpartitioned, missing_sort_order, delete_overhead, manifest_health, snapshot_retention, table_property_naming, poor_pruning, measurement_unavailable, empty_table). `undersized_partitions` means average partition capacity is below the 128 MB file target; it warrants testing a coarser partition transform, but does not by itself prove that daily pruning is inappropriate. Unavailable measurements always require review rather than silently becoming zero-valued facts.
+- High-severity deterministic signals are assessment evidence, not LLM instructions: they lower the baseline score, persist with it, and require a review warning even when an LLM check returns `not_found`. A lifecycle status of `completed` means checks finished; it never means the table is healthy.
 - `src/analyzer/pipeline.py` is the single execution path: Legacy Analyzer -> Context Manager -> Investigator -> Evidence -> Report. There is no branch that skips the Investigator.
+- `SmartTableAnalyzer` receives and reuses an already-established Spark session; the CLI only stops sessions it created. Evidence queries use Spark Connect tag-scoped interruption when the connector supports it, and otherwise report timeout cancellation as unconfirmed rather than claiming the action stopped.
 - `src/context/summarizers.py::InvestigationContext` caches metadata, signals, baseline, completed checks, evidence IDs, and findings for one run; `to_state()` projects it into `InvestigationState`.
 - `scripts/run_investigation.py` is the thin CLI wrapper: environment, SSL, Spark session, then `SmartTableAnalyzer.analyze`.
 - `scripts/_investigation_cli.py` holds environment/Spark/report plumbing plus `setup_logging`, which stamps every log record with its investigation id.
@@ -148,7 +159,8 @@
 - `src/metadata/` every Spark structure read, performed once per investigation.
 - `src/models/` domain models: `Finding`, `Investigation`, `InvestigationState`,
   `InvestigationReport`.
-- `src/reporting/` `assembler.py` -> `sections.py` -> `markdown.py` -> `writer.py`.
+- `src/reporting/` assembles validated findings and deterministic warnings, then renders sections and closing sections through `markdown.py` -> `writer.py`.
+- `src/database/` keeps connection/lifecycle ownership in `investigation_db.py`; read and write adapters isolate query ordering and persistence operations behind that interface.
 - `src/utils/` token counting, JSON extraction, and retry error guidance.
 - Package `__init__` exports are the public API; deep module paths are internal
   and may move.

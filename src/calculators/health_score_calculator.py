@@ -10,7 +10,6 @@ where metric relevance is derived from execution-engine-reported workload behavi
 
 from dataclasses import dataclass
 from typing import Dict, Optional
-import math
 
 
 @dataclass

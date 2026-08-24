@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlparse
 from sqlparse import sql
 from sqlparse import tokens as T
 

@@ -35,6 +35,17 @@ def detect_signals(
     if raw.get("is_empty"):
         return [_signal("empty_table", "HIGH", "Table has 0 rows and 0 data files")]
 
+    failed_metrics = raw.get("failed_metrics") or []
+    if failed_metrics:
+        signals.append(
+            _signal(
+                "measurement_unavailable",
+                "HIGH",
+                f"Required metadata measurements were unavailable: {', '.join(failed_metrics)}",
+                unavailable_metrics=sorted(failed_metrics),
+            )
+        )
+
     num_files = max(int(raw.get("num_data_files", 0)), 1)
     total_bytes = int(raw.get("total_data_file_bytes", 0))
     avg_bytes = total_bytes / num_files if total_bytes else 0
@@ -61,6 +72,22 @@ def detect_signals(
             )
         )
 
+    storage = raw.get("partition_storage") or {}
+    avg_partition_bytes = float(storage.get("avg_partition_bytes") or 0)
+    if avg_partition_bytes and avg_partition_bytes < TARGET_FILE_BYTES:
+        severity = "HIGH" if avg_partition_bytes < TARGET_FILE_BYTES * 0.1 else "MEDIUM"
+        signals.append(
+            _signal(
+                "undersized_partitions",
+                severity,
+                f"Average partition contains {avg_partition_bytes / 1e6:.1f} MB against a "
+                f"{TARGET_FILE_BYTES / 1e6:.0f} MB target file",
+                avg_partition_bytes=int(avg_partition_bytes),
+                partition_count=int(raw.get("partition_count", 0)),
+                avg_files_per_partition=float(storage.get("avg_files_per_partition") or 0),
+            )
+        )
+
     stats = raw.get("partition_stats") or {}
     max_rows = float(stats.get("max_rows") or 0)
     avg_rows = float(stats.get("avg_rows") or 0)
@@ -79,7 +106,7 @@ def detect_signals(
             )
 
     partition_count = int(raw.get("partition_count", 0))
-    if partition_count <= 1:
+    if "partition_count" not in failed_metrics and partition_count <= 1:
         signals.append(
             _signal("unpartitioned", "MEDIUM", "Table exposes a single partition or none",
                     partition_count=partition_count)

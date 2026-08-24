@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS investigation_findings (
     check_type TEXT,
     actionable_sql TEXT,
     confidence REAL,
+    issue_state TEXT NOT NULL DEFAULT 'needs_review',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (investigation_id) REFERENCES investigations(investigation_id) ON DELETE CASCADE,
     UNIQUE(investigation_id, check_num)

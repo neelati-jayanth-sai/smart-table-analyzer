@@ -22,6 +22,8 @@ from .signals import detect_signals
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["LegacyAnalyzer", "MetadataUnavailable"]
+
 
 class LegacyAnalyzer:
     """Collect Iceberg metadata once and turn it into an InvestigationContext."""
@@ -47,8 +49,9 @@ class LegacyAnalyzer:
         if patterns:
             metadata["query_patterns"] = patterns
 
-        baseline = compute_score(raw, patterns)
         signals = detect_signals(raw, metadata, patterns)
+        baseline = compute_score(raw, patterns)
+        baseline["signals"] = signals
 
         logger.info(
             "Legacy Analyzer: score=%.1f, %d signal(s): %s",

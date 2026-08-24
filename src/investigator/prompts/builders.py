@@ -143,7 +143,9 @@ def build_analysis_prompt(prompt_context: PromptContext, state: dict[str, Any] |
         knowledge_text=prompt_context.knowledge_text,
         evidence_ids=prompt_context.knowledge_evidence_ids,
         column_analysis=json.dumps(prompt_context.column_analysis, default=str),
+        partition_analysis=json.dumps(prompt_context.partition_analysis, default=str),
         query_patterns=json.dumps(prompt_context.query_patterns, default=str),
+        measured_signals=json.dumps(prompt_context.baseline_summary.get("signals", []), default=str),
         critic_feedback_section=critic_feedback_section,
         table_name=prompt_context.table_name,
     )

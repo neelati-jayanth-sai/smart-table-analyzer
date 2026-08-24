@@ -38,6 +38,7 @@ class AnalysisState(TypedDict):
     needs_followup: NotRequired[bool]
     followup_question: NotRequired[str | None]
     critic_feedback: NotRequired[str | None]
+    issue_state: NotRequired[str]
 
 
 class FindingState(TypedDict):
@@ -53,6 +54,7 @@ class FindingState(TypedDict):
     validated: bool
     check_type: NotRequired[str | None]
     actionable_sql: NotRequired[str | None]
+    issue_state: NotRequired[str]
 
 
 class InvestigationState(TypedDict):

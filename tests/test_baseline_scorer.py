@@ -15,7 +15,7 @@ from src.calculators.baseline_scorer import score
 
 def _raw(num_data_files=1000, total_data_file_bytes=100_000_000,
          delete_bytes=0, partition_count=5, snapshot_count=10,
-         row_count=10_000_000) -> dict:
+         row_count=10_000_000, partition_stats=None) -> dict:
     return {
         "num_data_files": num_data_files,
         "total_data_file_bytes": total_data_file_bytes,
@@ -24,6 +24,7 @@ def _raw(num_data_files=1000, total_data_file_bytes=100_000_000,
         "snapshot_count": snapshot_count,
         "row_count": row_count,
         "is_empty": row_count == 0 and num_data_files == 0,
+        "partition_stats": partition_stats or {},
     }
 
 
@@ -94,6 +95,17 @@ class TestAdaptiveWeighting:
 
     def test_no_partitions_lowers_score(self):
         assert score(_raw(partition_count=0))["overall"] < score(_raw(partition_count=20))["overall"]
+
+    def test_high_partition_skew_lowers_partition_score(self):
+        clean = score(_raw(partition_count=20))
+        skewed = score(
+            _raw(
+                partition_count=20,
+                partition_stats={"max_rows": 40_000_000, "avg_rows": 1_000_000},
+            )
+        )
+        assert skewed["dimensions"]["partition_aware"] < clean["dimensions"]["partition_aware"]
+        assert skewed["overall"] < 95.0
 
 
 class TestWorkloadEnrichment:

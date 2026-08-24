@@ -21,6 +21,12 @@ SIGNAL_HYPOTHESES: dict[str, tuple[str, str]] = {
         "How are small files distributed across partitions, and how much planning "
         "overhead do they add?",
     ),
+    "undersized_partitions": (
+        "partitioning",
+        "Does the current partition transform create partitions too small to form "
+        "the target file size, and would a coarser time transform preserve the "
+        "observed workload pruning?",
+    ),
     "large_files": (
         "file_size",
         "Are oversized data files preventing effective parallelism on scans?",

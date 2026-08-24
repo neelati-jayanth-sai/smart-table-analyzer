@@ -62,7 +62,7 @@ def main() -> int:
     if args.query_metrics_table:
         os.environ["IOMETE_QUERY_METRICS_TABLE"] = args.query_metrics_table
 
-    spark = cli.create_spark_session()
+    spark, owns_spark = cli.acquire_spark_session()
     from src.query.snapshot_pinning import fetch_current_snapshot
 
     snapshot_id = args.snapshot or fetch_current_snapshot(spark, table_name)
@@ -127,7 +127,8 @@ def main() -> int:
         return 1
 
     finally:
-        spark.stop()
+        if owns_spark:
+            spark.stop()
 
 
 if __name__ == "__main__":

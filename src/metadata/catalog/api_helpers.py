@@ -1,6 +1,5 @@
 """Helper functions for Alation API adapters."""
 
-from typing import Any
 
 
 def _fetch_additional_table_metadata(

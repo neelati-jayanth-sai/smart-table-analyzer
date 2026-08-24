@@ -1,7 +1,7 @@
 """Validate LLM responses against expected schemas."""
 
 import re
-from typing import Any, Optional
+from typing import Optional
 
 from src.utils import parse_json_response
 
@@ -68,6 +68,19 @@ class ResponseValidator:
         valid_verdicts = ["found", "not_found", "inconclusive"]
         if parsed.get("verdict") not in valid_verdicts:
             return False, f"Invalid verdict: {parsed.get('verdict')}", None
+
+        issue_state = parsed.get("issue_state")
+        if issue_state is not None and issue_state not in {
+            "issue_found", "no_issue_found", "needs_review"
+        }:
+            return False, f"Invalid issue_state: {issue_state}", None
+        expected_state = {
+            "found": "issue_found",
+            "not_found": "no_issue_found",
+            "inconclusive": "needs_review",
+        }[parsed["verdict"]]
+        if issue_state is not None and issue_state != expected_state:
+            return False, "issue_state contradicts verdict", None
 
         return True, None, parsed
 

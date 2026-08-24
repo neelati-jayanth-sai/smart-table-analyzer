@@ -9,6 +9,8 @@ from src.calculators.baseline_scorer import explain_score
 from src.database import InvestigationDb
 from src.validation import ClaimValidator
 
+from .assessment_policy import assess
+
 
 class ReportAssembler:
     """Read one investigation back out of SQLite and validate every claim.
@@ -50,7 +52,9 @@ class ReportAssembler:
         baseline = investigation.baseline_score or {}
         dimensions = baseline.get("dimensions") or {}
 
-        validated = sum(1 for f in finding_dicts if f["validation"]["valid"])
+        validated = sum(
+            1 for f in finding_dicts if f["db_validated"] and f["validation"]["valid"]
+        )
         summary = {
             "total_findings": len(finding_dicts),
             "validated_findings": validated,
@@ -59,10 +63,16 @@ class ReportAssembler:
             "root_causes": sum(
                 1
                 for f in finding_dicts
-                if f["verdict"] == "found" and f["validation"]["valid"]
+                if f.get("verdict") == "found"
+                and f.get("issue_state") == "issue_found"
+                and f.get("db_validated")
+                and f["validation"]["valid"]
             ),
         }
 
+        assessment = assess(
+            investigation.status, baseline, finding_dicts, hook_violations
+        )
         return InvestigationReport(
             investigation_id=investigation_id,
             run_id=investigation.run_id,
@@ -72,6 +82,7 @@ class ReportAssembler:
             status=investigation.status,
             started_at=investigation.started_at,
             completed_at=investigation.completed_at,
+            snapshot_id=investigation.snapshot_id,
             baseline_score=baseline,
             score_explanation=explain_score(dimensions),
             findings=finding_dicts,
@@ -79,7 +90,14 @@ class ReportAssembler:
             trail=trail,
             hook_violations=hook_violations,
             summary=summary,
-            warnings=_warnings(finding_dicts, trail, hook_violations, investigation.status),
+            assessment=assessment,
+            warnings=_warnings(
+                finding_dicts,
+                trail,
+                hook_violations,
+                investigation.status,
+                baseline.get("signals") or [],
+            ),
         )
 
 
@@ -102,6 +120,7 @@ def _warnings(
     trail: list[dict[str, Any]],
     hook_violations: list[dict[str, Any]],
     status: str,
+    signals: list[dict[str, Any]],
 ) -> list[str]:
     """Surface degraded execution instead of hiding it behind an empty finding."""
     warnings: list[str] = []
@@ -120,11 +139,20 @@ def _warnings(
     if failed:
         warnings.append(f"{len(failed)} query/queries failed or timed out during execution.")
 
-    unvalidated = [f for f in findings if not f["validation"]["valid"]]
+    unvalidated = [
+        f for f in findings if not f["db_validated"] or not f["validation"]["valid"]
+    ]
     if unvalidated:
         warnings.append(
             f"{len(unvalidated)} finding(s) cite evidence that could not be resolved and "
             "are reported as unvalidated."
+        )
+    high_signals = [signal for signal in signals if signal.get("severity") == "HIGH"]
+    if high_signals:
+        details = "; ".join(signal.get("detail", signal.get("name", "signal")) for signal in high_signals)
+        warnings.append(
+            "High-severity deterministic measurement(s) require review even when an "
+            f"LLM check returns no root cause: {details}."
         )
     if status != "completed":
         warnings.append(f"Investigation ended with status '{status}'.")

@@ -5,7 +5,6 @@ condensed forms reach the LLM.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
 _MIN_COLS_FLOOR = 10

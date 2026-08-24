@@ -18,7 +18,9 @@ Evidence rules — every claim must be traceable:
   the claim.
 
 Column analysis: {column_analysis}
+Current DDL and partition analysis: {partition_analysis}
 Query workload patterns: {query_patterns}
+Measured baseline signals: {measured_signals}
 
 Other rules:
 - exact_result holds the real numbers from the query result, as plain text or a
@@ -31,6 +33,7 @@ Other rules:
 
 Respond with JSON only, no prose and no code fences:
 {{"verdict": "found|not_found|inconclusive",
+ "issue_state": "issue_found|no_issue_found|needs_review",
  "exact_result": "<the real numbers>",
  "rationale": "<why the evidence supports the verdict, at least 20 characters>",
  "evidence_ids": ["trail:{check_num}"],

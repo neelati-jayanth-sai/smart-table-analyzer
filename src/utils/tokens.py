@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from abc import ABC, abstractmethod
-from typing import Any
 
 
 class TokenCounter(ABC):
@@ -43,9 +43,7 @@ def get_token_counter(model: str | None = None) -> TokenCounter:
     """Return a token counter appropriate for the given model name."""
     if model is None:
         return Char4TokenCounter()
-    try:
-        import tiktoken
-    except ImportError:
+    if importlib.util.find_spec("tiktoken") is None:
         return Char4TokenCounter()
 
     lowered = model.lower()

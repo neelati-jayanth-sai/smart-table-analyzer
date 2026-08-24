@@ -25,6 +25,7 @@ from src.context import ContextEngine, InvestigationContext, InvestigationContex
 from .executors import InvestigationNodes
 from .loop import MAX_FOLLOWUPS_PER_CHAIN
 from .state import InvestigationState
+from .status import final_status as _final_status
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class Investigator:
         max_checks: int = 50,
         max_retries_per_check: int = 3,
         context_engine: ContextEngine | None = None,
-        max_workers: int = 5,
+        max_workers: int = 1,
     ):
         self.db = db
         self.workbench = workbench
@@ -178,24 +179,3 @@ class Investigator:
             findings=[dict(f) for f in findings],
             checks=self.db.list_trail(investigation_id),
         )
-
-
-def _final_status(
-    findings: list[dict[str, Any]],
-    chains_concluded: int,
-    chains_planned: int,
-    step_count: int,
-    max_steps: int,
-) -> str:
-    """Derive the terminal status from evidence first, budget second.
-
-    Evidence is the gate: without a finding that cites evidence, an
-    investigation concluded nothing and is `failed`. Only then does budget
-    exhaustion - every planned hypothesis having concluded, or the step budget
-    being spent - distinguish `completed` from a run that stopped early, which
-    is `aborted`.
-    """
-    if not any(f.get("evidence_ids") for f in findings):
-        return "failed"
-    budget_exhausted = chains_concluded >= chains_planned or step_count >= max_steps
-    return "completed" if budget_exhausted else "aborted"

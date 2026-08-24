@@ -8,6 +8,7 @@ from src.context import PromptProfile
 from src.investigator.prompts import build_critic_prompt
 from src.investigator.state import InvestigationState, validate_state
 from src.models.state import AnalysisState
+from src.models.finding import issue_state_for
 
 from ..executors._logging import _logged
 from ..executors.serialization import to_str, to_str_or_none
@@ -27,7 +28,6 @@ class CriticReview:
             return state
 
         prompt_context = self.context_engine.render(PromptProfile.ANALYSIS, state)
-        from src.investigator.prompts import build_critic_prompt
         response = self.llm.generate(
             [{"role": "user", "content": build_critic_prompt(prompt_context, draft_finding, state)}]
         )
@@ -48,6 +48,7 @@ class CriticReview:
             evidence_ids=parsed.get("evidence_ids") or [],
             confidence=confidence_for(parsed, state, fallback=draft.get("confidence")),
             recommendation=to_str_or_none(parsed.get("recommendation")),
+            issue_state=issue_state_for(str(parsed.get("verdict", "inconclusive"))),
             alternatives=parsed.get("alternatives") or [],
             actionable_sql=actionable_sql,
             approved=parsed.get("approved", True),

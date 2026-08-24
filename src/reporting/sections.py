@@ -14,7 +14,9 @@ def _executive_summary(report: InvestigationReport) -> list[str]:
     causes = report.root_causes
     lines: list[str] = []
 
-    if causes:
+    if report.assessment.state == "incomplete":
+        lines.append("Assessment is incomplete. Do not treat this run as a clean result.")
+    elif causes:
         lines.append(
             f"**{len(causes)} confirmed problem(s)** found across "
             f"{report.summary['total_findings']} checks on `{report.table_name}`."
@@ -22,6 +24,11 @@ def _executive_summary(report: InvestigationReport) -> list[str]:
         lines.append("")
         for finding in causes:
             lines.append(f"- {_headline(finding)}")
+    elif report.high_severity_signals:
+        lines.append(
+            f"No LLM-confirmed root cause, but {len(report.high_severity_signals)} "
+            "high-severity deterministic measurement(s) require review."
+        )
     elif report.summary["total_findings"]:
         lines.append(
             f"No confirmed problems. {report.summary['validated_findings']} of "
@@ -49,7 +56,8 @@ def _executive_summary(report: InvestigationReport) -> list[str]:
 
     lines += [
         "",
-        f"Status: **{report.status}** | Investigation `{report.investigation_id}` | "
+        f"Lifecycle: **{report.status}** | Assessment: **{report.assessment.state}** | "
+        f"Investigation `{report.investigation_id}` | "
         f"{report.summary['total_queries']} quer(ies) executed | "
         f"{report.summary['validated_findings']}/{report.summary['total_findings']} findings validated.",
     ]
@@ -164,45 +172,6 @@ def _sql_validation(report: InvestigationReport) -> list[str]:
                 f"- `{violation['hook_name']}` blocked check {violation['check_num']}: "
                 f"{violation['reason']}"
             )
-    return lines
-
-
-def _recommendations(report: InvestigationReport) -> list[str]:
-    recommendations = report.recommendations
-    if not recommendations:
-        return ["No evidence-backed recommendation. Do not act on an unvalidated finding."]
-
-    lines: list[str] = []
-    for finding in recommendations:
-        lines.append(f"### {finding.get('check_type') or 'recommendation'}")
-        lines.append("")
-        lines.append(finding["recommendation"])
-        lines.append("")
-        lines.append(f"Backed by: {', '.join(finding['evidence_ids'])}")
-        if finding.get("alternatives"):
-            lines.append("")
-            lines.append("Alternatives considered:")
-            lines += [f"- {alt}" for alt in finding["alternatives"]]
-        if finding.get("actionable_sql"):
-            lines += ["", "```sql", finding["actionable_sql"].strip(), "```"]
-        lines.append("")
-    return lines
-
-
-def _appendix(report: InvestigationReport) -> list[str]:
-    baseline = report.baseline_score or {}
-    dimensions = baseline.get("dimensions") or {}
-    lines = [
-        f"- Investigation ID: {report.investigation_id}",
-        f"- Run ID: {report.run_id}",
-        f"- Catalog / schema: {report.catalog_name} / {report.schema_name}",
-        f"- Started: {report.started_at}",
-        f"- Completed: {report.completed_at or 'n/a'}",
-        f"- Overall health score: {baseline.get('overall', 'n/a')}",
-        "",
-        "Table metrics:",
-    ]
-    lines += [f"  - {key}: {value}" for key, value in sorted(dimensions.items())]
     return lines
 
 

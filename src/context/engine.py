@@ -118,6 +118,7 @@ class InvestigationContextEngine(ContextEngine):
             "is_empty": (baseline.get("dimensions") or {}).get("is_empty", False),
             "row_count": (baseline.get("dimensions") or {}).get("row_count", 0),
             "num_data_files": (baseline.get("dimensions") or {}).get("num_data_files", 0),
+            "signals": baseline.get("signals", []),
         }
         findings_summary = cm.summarize_findings(state.get("findings", []), max_items)
         query_result_summary = cm.summarize_query_result(state.get("query_result"), max_rows)
@@ -169,6 +170,7 @@ class InvestigationContextEngine(ContextEngine):
         if profile == PromptProfile.ANALYSIS:
             return PromptContext(
                 table_name=table_name,
+                baseline_summary=baseline_summary,
                 check_count=check_count,
                 current_question=current_question,
                 current_check_type=current_check_type,
@@ -176,6 +178,7 @@ class InvestigationContextEngine(ContextEngine):
                 knowledge_text=knowledge_text,
                 knowledge_evidence_ids=knowledge_evidence_ids,
                 column_analysis=column_analysis,
+                partition_analysis=partition_analysis,
                 query_patterns=query_patterns,
             )
         raise ValueError(f"Unknown prompt profile: {profile}")

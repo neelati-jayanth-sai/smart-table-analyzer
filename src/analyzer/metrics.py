@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -64,15 +63,12 @@ def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
 
     results: dict[str, int] = {key: 0 for key in queries}
     failed: set[str] = set()
-    with ThreadPoolExecutor(max_workers=len(queries)) as pool:
-        futures = {pool.submit(_scalar, spark, q): k for k, q in queries.items()}
-        for future in as_completed(futures):
-            key = futures[future]
-            value = future.result()
-            if value is _FAILED:
-                failed.add(key)
-            else:
-                results[key] = int(value or 0)
+    for key, query in queries.items():
+        value = _scalar(spark, query)
+        if value is _FAILED:
+            failed.add(key)
+        else:
+            results[key] = int(value or 0)
 
     if len(failed) == len(queries):
         raise MetadataUnavailable(
@@ -91,6 +87,18 @@ def collect_raw_metrics(spark, table_name: str) -> dict[str, Any]:
         f" AVG(record_count) AS avg_rows, MAX(file_count) AS max_files"
         f" FROM {table_name}.partitions",
     )
+    results["partition_storage"] = _row(
+        spark,
+        f"SELECT AVG(total_data_file_size_in_bytes) AS avg_partition_bytes,"
+        f" MIN(total_data_file_size_in_bytes) AS min_partition_bytes,"
+        f" MAX(total_data_file_size_in_bytes) AS max_partition_bytes,"
+        f" AVG(file_count) AS avg_files_per_partition,"
+        f" MAX(file_count) AS max_files_per_partition"
+        f" FROM {table_name}.partitions",
+    )
+    for name in ("partition_stats", "partition_storage"):
+        if not results[name]:
+            failed.add(name)
     results["failed_metrics"] = sorted(failed)
     # Only a table that actually answered both counts can be called empty.
     results["is_empty"] = (

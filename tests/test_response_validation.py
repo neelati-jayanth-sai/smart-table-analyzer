@@ -44,6 +44,13 @@ class TestResponseRobustness:
         )
         assert not is_valid and "verdict" in error
 
+    def test_contradictory_issue_state_is_rejected(self):
+        is_valid, error, _ = ResponseValidator.validate_analysis_response(
+            '{"verdict": "not_found", "issue_state": "issue_found", '
+            '"exact_result": "x", "rationale": "y"}'
+        )
+        assert not is_valid and "contradicts" in error
+
 
 class TestStatusDerivation:
     """'completed' means every planned hypothesis concluded on real evidence."""

@@ -126,6 +126,17 @@ def write_report(
     return ReportWriter(output_dir).write(report, output_path)
 
 
+def acquire_spark_session(existing: SparkSession | None = None) -> tuple[SparkSession, bool]:
+    """Return a supplied or active session without taking ownership of it."""
+    if existing is not None:
+        return existing, False
+    active = SparkSession.getActiveSession()
+    if active is not None:
+        return active, False
+    session = SparkSession.builder.appName("investigator-cli").remote(build_spark_url()).getOrCreate()
+    return session, True
+
+
 def create_spark_session() -> SparkSession:
     """Create a remote Spark Connect session for IOMETE."""
-    return SparkSession.builder.appName("investigator-cli").remote(build_spark_url()).getOrCreate()
+    return acquire_spark_session()[0]

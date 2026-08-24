@@ -27,6 +27,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("check_type", "TEXT"),
         ("actionable_sql", "TEXT"),
         ("confidence", "REAL"),
+        ("issue_state", "TEXT NOT NULL DEFAULT 'needs_review'"),
     ):
         if name not in columns:
             conn.execute(f"ALTER TABLE investigation_findings ADD COLUMN {name} {decl}")

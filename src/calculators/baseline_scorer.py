@@ -17,6 +17,8 @@ _TARGET_FILE_BYTES = 134_217_728   # 128 MB
 _SCAN_THROUGHPUT_BYTES_PER_NS = 1  # 1 GB/s = 1 byte/ns
 _IDEAL_CPU_NS_PER_FILE = _TARGET_FILE_BYTES // _SCAN_THROUGHPUT_BYTES_PER_NS  # 134ms in ns
 _MANIFEST_FILE_THRESHOLD = 50_000  # above this, planning time grows significantly
+_SKEW_MEDIUM_RATIO = 5.0
+_SKEW_HIGH_RATIO = 20.0
 
 
 def score(raw_metrics: dict[str, Any],
@@ -40,6 +42,7 @@ def score(raw_metrics: dict[str, Any],
         "partition_count": raw_metrics.get("partition_count", 0),
         "snapshot_count": raw_metrics.get("snapshot_count", 0),
         "is_empty": bool(raw_metrics.get("is_empty", False)),
+        "unavailable_metrics": list(raw_metrics.get("failed_metrics") or []),
     })
 
     return {
@@ -61,7 +64,6 @@ def _derive_usage_signals(raw_metrics: dict[str, Any],
     avg_input_bytes = wp.get("avg_input_bytes", 0.0)
     # Only trust workload signals when they come from real data-scanning queries
     has_scan_workload = wp.get("scan_queries_analyzed", 0) >= 5
-    has_workload = wp.get("total_queries_analyzed", 0) >= 10
 
     # --- file_size ---
     if has_scan_workload and avg_cpu_ns > 0:
@@ -92,12 +94,23 @@ def _derive_usage_signals(raw_metrics: dict[str, Any],
     # When scan data is available, use avg scan ratio as a pruning proxy:
     #   ratio near 1.0 → full-table scans → poor pruning → high signal
     #   ratio near 0.0 → narrow scans   → good pruning → low signal
-    # Structural fallback: partitioned=good (0.0), unpartitioned=bad (0.5)
+    # Structural fallback: partitioned=good (0.0), unpartitioned=bad (0.5).
+    # A measured distribution always takes precedence over that weak proxy:
+    # merely having partitions cannot compensate for one dominant partition.
     if has_scan_workload and avg_input_bytes > 0 and total_bytes > 0:
         scan_ratio = min(avg_input_bytes / total_bytes, 1.0)
         u_partition = scan_ratio if partition_count > 1 else min(scan_ratio + 0.3, 1.0)
     else:
         u_partition = 0.0 if partition_count > 1 else 0.5
+
+    partition_stats = raw_metrics.get("partition_stats") or {}
+    max_rows = float(partition_stats.get("max_rows") or 0)
+    avg_rows = float(partition_stats.get("avg_rows") or 0)
+    if max_rows and avg_rows:
+        skew_ratio = max_rows / avg_rows
+        if skew_ratio >= _SKEW_MEDIUM_RATIO:
+            skew_penalty = min(skew_ratio / _SKEW_HIGH_RATIO, 1.0)
+            u_partition = max(u_partition, skew_penalty)
 
     return UsageSignals(
         file_size=u_file,

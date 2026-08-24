@@ -13,7 +13,6 @@ import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from src.database import InvestigationDb
 from src.context import InvestigationContext
@@ -48,7 +47,7 @@ class SmartTableAnalyzer:
         knowledge,
         max_checks: int = 5,
         max_retries: int = 3,
-        max_workers: int = 5,
+        max_workers: int = 1,
     ):
         self.spark = spark
         self.db = db
@@ -85,7 +84,11 @@ class SmartTableAnalyzer:
             context = self._collect(table_name, catalog_name, schema_name, snapshot_id)
             context.investigation_id = investigation_id
             self.db.record_baseline_score(
-                investigation_id, context.baseline["overall"], context.baseline["dimensions"]
+                investigation_id,
+                context.baseline["overall"],
+                context.baseline["dimensions"],
+                context.signals,
+                {"partition_analysis": context.metadata.get("partition_analysis", {})},
             )
 
             result = self._investigate(investigation_id, context)
@@ -147,7 +150,7 @@ class SmartTableAnalyzer:
             self.spark,
             hooks=hooks,
             snapshot_id=context.snapshot_id,
-            timeout_seconds=int(os.getenv("QUERY_TIMEOUT_SECONDS", "30")),
+            timeout_seconds=int(os.getenv("QUERY_TIMEOUT_SECONDS", "180")),
             row_limit=int(os.getenv("QUERY_ROW_LIMIT", "500")),
             table_name=context.table_name,
             table_metadata=context.metadata,

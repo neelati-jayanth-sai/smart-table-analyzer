@@ -19,6 +19,7 @@ from ..executors.finding_compaction import build_finding_state
 
 if TYPE_CHECKING:
     from ..executors import InvestigationNodes
+    from .runner import _CheckNumbers
 
 logger = logging.getLogger(__name__)
 

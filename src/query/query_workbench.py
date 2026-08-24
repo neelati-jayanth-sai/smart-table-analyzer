@@ -6,6 +6,7 @@ import base64
 import datetime
 import json
 import logging
+import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from decimal import Decimal
@@ -36,6 +37,10 @@ class QueryResult:
     execution_time_ms: int | None = None
     error: str | None = None
     hook_result: ValidationResult | None = None
+
+
+class QueryTimeoutUnconfirmed(TimeoutError):
+    """A query exceeded its deadline but the session cannot confirm cancellation."""
 
 
 def _json_safe(value: Any) -> Any:
@@ -139,13 +144,21 @@ class QueryWorkbench:
                 row_count=row_count,
                 execution_time_ms=elapsed_ms,
             )
-        except TimeoutError:
-            logger.warning("Query timed out after %ss", self.timeout_seconds)
+        except QueryTimeoutUnconfirmed:
+            logger.warning("Query timeout could not be confirmed after %ss", self.timeout_seconds)
             return QueryResult(
                 success=False,
                 query=query,
                 rewritten_query=rewritten,
-                error=f"Query timed out after {self.timeout_seconds}s",
+                error=f"Query timeout after {self.timeout_seconds}s; cancellation was unavailable",
+            )
+        except TimeoutError:
+            logger.warning("Query timed out after %ss and was interrupted", self.timeout_seconds)
+            return QueryResult(
+                success=False,
+                query=query,
+                rewritten_query=rewritten,
+                error=f"Query timed out after {self.timeout_seconds}s and was interrupted",
             )
         except Exception as exc:
             logger.exception("Query execution failed")
@@ -160,11 +173,44 @@ class QueryWorkbench:
         import time
 
         start = time.perf_counter()
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(self._run_query, query)
+        tag = f"investigation-query-{uuid.uuid4()}"
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self._run_tagged_query, query, tag)
+        try:
             rows, schema, row_count = future.result(timeout=self.timeout_seconds)
+        except TimeoutError:
+            cancelled = self._interrupt_tag(tag)
+            future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            if not cancelled:
+                raise QueryTimeoutUnconfirmed from None
+            raise
+        else:
+            executor.shutdown(wait=False, cancel_futures=True)
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         return rows, schema, row_count, elapsed_ms
+
+    def _run_tagged_query(self, query: str, tag: str) -> tuple[list[dict], list[dict], int]:
+        tag_query = getattr(self.spark, "addTag", None)
+        remove_tag = getattr(self.spark, "removeTag", None)
+        if callable(tag_query):
+            tag_query(tag)
+        try:
+            return self._run_query(query)
+        finally:
+            if callable(remove_tag):
+                remove_tag(tag)
+
+    def _interrupt_tag(self, tag: str) -> bool:
+        interrupt = getattr(self.spark, "interruptTag", None)
+        if not callable(interrupt):
+            return False
+        try:
+            interrupt(tag)
+            return True
+        except Exception:
+            logger.warning("Could not interrupt Spark query tag %s", tag, exc_info=True)
+            return False
 
     def _run_query(self, query: str) -> tuple[list[dict], list[dict], int]:
         cleaned = query.strip().rstrip(";")

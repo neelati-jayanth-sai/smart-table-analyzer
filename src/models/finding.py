@@ -24,6 +24,15 @@ LIFECYCLE_STATES = (
 TERMINAL_STATES = ("completed", "failed", "aborted")
 
 
+def issue_state_for(verdict: str) -> str:
+    """Derive the reportable issue state from the answer to a check."""
+    if verdict == "found":
+        return "issue_found"
+    if verdict == "not_found":
+        return "no_issue_found"
+    return "needs_review"
+
+
 @dataclass
 class Finding:
     """One evidence-backed answer to one investigation question."""
@@ -40,6 +49,7 @@ class Finding:
     check_type: str | None = None
     actionable_sql: str | None = None
     confidence: float | None = None
+    issue_state: str = "needs_review"
 
 
 @dataclass

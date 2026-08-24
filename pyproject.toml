@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 100
+extend-exclude = ["scripts"]
+
+[tool.ruff.lint]
+select = ["F"]
+
+[tool.mypy]
+files = ["src/analyzer/signals.py", "src/models", "src/reporting/closing_sections.py", "ui_metadata.py"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+explicit_package_bases = true
+follow_imports = "skip"
