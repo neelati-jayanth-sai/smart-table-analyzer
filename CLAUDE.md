@@ -47,7 +47,8 @@ src/
 │   ├── metrics.py            # one parallel pass of Iceberg metric queries
 │   ├── signals.py            # measurements vs the operating standard
 │   ├── legacy_analyzer.py    # LegacyAnalyzer -> InvestigationContext
-│   └── pipeline.py           # SmartTableAnalyzer: the single execution path
+│   ├── pipeline.py           # SmartTableAnalyzer: the single execution path
+│   └── progress.py           # AnalysisProgress callback (CLI + dashboard)
 │
 ├── context/                  # investigation state + prompt rendering
 │   ├── investigation_context.py
@@ -57,6 +58,7 @@ src/
 │
 ├── investigator/             # the reasoning engine
 │   ├── investigator.py       # lifecycle, delegation, terminal status
+│   ├── status.py             # final_status: terminal-state decision
 │   ├── planner/              # adaptive hypothesis generation
 │   │   ├── hypotheses.py     # signal -> hypothesis catalogue (data)
 │   │   └── planner.py        # plan_checks: LLM ranking + fallbacks
@@ -69,41 +71,101 @@ src/
 │   │   ├── execution.py      # run SQL, record the trail
 │   │   ├── analysis.py       # result -> draft finding
 │   │   ├── analyst_tools.py  # bounded extra-query tool loop
-│   │   └── compaction.py     # draft -> persisted finding
+│   │   ├── compaction.py     # draft -> persisted finding
+│   │   ├── finding_compaction.py  # build_finding_state helper
+│   │   ├── serialization.py  # to_str/to_str_or_none coercions
+│   │   └── _logging.py       # @_logged node decorator
 │   ├── critic/               # validation of findings
 │   │   ├── critic.py         # adversarial LLM review
 │   │   ├── quality_gate.py   # deterministic rejection rules
 │   │   └── sanitizers.py     # placeholder SQL, confidence derivation
 │   ├── knowledge/            # list-then-fetch tool loop + deterministic fallback
+│   │   ├── retriever.py      # deterministic keyword fallback
+│   │   ├── tool_runner.py    # LLM-driven fetch loop
+│   │   └── tool_definitions.py
 │   ├── prompts/              # prompt builders, response validation, templates/
+│   │   ├── builders.py
+│   │   └── response_validator.py
 │   └── state/                # invariants (validator) and budget
+│       ├── validator.py
+│       └── budget.py         # StepBudget
 │
 ├── metadata/                 # ALL Spark structure reads, exactly once
 │   ├── loader.py             # load_table_metadata
+│   ├── collection_profile.py # MetadataCollectionProfile: fast/deep
 │   ├── columns.py            # cardinality / null analysis
 │   ├── partitions.py
 │   ├── properties.py
 │   ├── query_patterns.py     # IOMETE query-log workload adapter
+│   ├── workload.py
 │   └── catalog/              # Alation catalog context
+│       ├── alation_adapter.py
+│       ├── api_key_adapter.py
+│       ├── api_helpers.py
+│       └── mock_adapter.py
 │
 ├── models/                   # domain models shared across layers
 │   ├── finding.py            # Finding, Investigation, lifecycle states
 │   ├── state.py              # InvestigationState and friends
-│   └── report.py             # InvestigationReport
+│   ├── report.py             # InvestigationReport
+│   └── assessment.py         # deterministic report assessment
 │
-├── reporting/                # consumes validated findings only
-│   ├── assembler.py          # DB -> InvestigationReport (+ claim validation)
-│   ├── sections.py           # one builder per report section
+├── reporting/                 # consumes validated findings only
+│   ├── assembler.py           # DB -> InvestigationReport (+ claim validation)
+│   ├── assessment_policy.py   # assess(): status/evidence -> assessment
+│   ├── sections.py            # one builder per report section
+│   ├── closing_sections.py    # recommendations + metadata appendix
 │   ├── markdown.py
 │   └── writer.py
 │
-├── query/                    # SQL execution and safety hooks
-├── calculators/              # pure deterministic scoring
-├── database/                 # SQLite persistence (schema.py + repository)
-├── connectors/               # Spark and LLM adapters
-├── validation/               # evidence-ID claim validation
-└── utils/                    # tokens, JSON parsing, error guidance
+├── query/                     # SQL execution and safety hooks
+│   ├── query_workbench.py     # QueryWorkbench: validate, pin, execute, timeout
+│   ├── query_hooks.py         # hook interface + validation results
+│   ├── hook_factory.py        # create_investigation_hooks
+│   ├── snapshot_pinning.py    # rewrite queries onto a pinned snapshot
+│   ├── schema_grounding.py    # SqlGroundingHook: reject hallucinated columns
+│   └── _schema_grounding_core.py
+│
+├── calculators/                # pure deterministic scoring
+│   ├── baseline_scorer.py      # score() + explain_score()
+│   └── health_score_calculator.py
+│
+├── database/                   # SQLite persistence
+│   ├── schema.py                # create_schema + migrations (DDL in schema/investigation.sql)
+│   ├── investigation_db.py      # InvestigationDb facade
+│   ├── investigation_reads.py
+│   ├── investigation_writes.py
+│   ├── knowledge_store.py
+│   └── paths.py                 # investigation_db_path
+│
+├── dashboard/                   # Streamlit dashboard building blocks
+│   ├── analysis_runner.py       # DashboardAnalysisRunner: run the pipeline from the UI
+│   ├── report_store.py          # InvestigationReportStore: list/get historic reports
+│   ├── view_models.py
+│   ├── overview.py              # one renderer per dashboard page
+│   ├── findings.py
+│   ├── evidence.py
+│   ├── history.py
+│   ├── audit.py
+│   └── artifact_reports.py
+│
+├── connectors/                  # Spark and LLM adapters
+│   ├── llm_adapter.py            # LLMAdapter interface + MockLLMAdapter
+│   └── dell_aia_adapter.py       # DellAIAAdapter: real LLM connector
+│
+├── validation/                   # evidence-ID claim validation
+│   └── claim_validator.py
+│
+└── utils/                        # tokens, JSON parsing, error guidance
+    ├── tokens.py
+    ├── json_parsing.py
+    └── errors.py
 ```
+
+Entry points live outside `src/`: `app.py` is the Streamlit dashboard,
+`scripts/_investigation_cli.py` is the CLI — both call
+`SmartTableAnalyzer.analyze()`. `tests/` mirrors the modules above;
+`schema/investigation.sql` is the canonical DDL for `src/database/schema.py`.
 
 Every folder has **one responsibility**. Files stay small and focused; split a
 module rather than letting it accumulate a second job.

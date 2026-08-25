@@ -62,6 +62,8 @@ def load_table_metadata(
     metadata: dict[str, Any] = {
         "table_name": table_name,
         "collection_profile": collection_profile.name,
+        "collection_contract": collection_profile.contract(),
+        "collection_contract": collection_profile.contract(),
     }
 
     metadata["columns"] = _columns_of(spark, table_name)
@@ -71,7 +73,7 @@ def load_table_metadata(
     metadata["sample_rows"] = (
         _sample_rows(spark, table_name) if collection_profile.include_sample_rows else []
     )
-    if collection_profile.analyze_column_stats and row_count > 0 and metadata["columns"]:
+    if collection_profile.analyze_column_stats and metadata["columns"]:
         metadata["column_analysis"] = analyze_columns(
             spark, table_name, metadata["columns"], row_count
         )

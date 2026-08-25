@@ -32,6 +32,10 @@ logs/
 SETUP_COMPLETE.md
 KNOWLEDGE_BASE_READY.md
 
+# Local investigation material
+/screenshots/
+/CLAUDE.md
+
 # Editors
 .vscode/
 .idea/

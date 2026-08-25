@@ -36,6 +36,8 @@ def load_report(path: Path) -> InvestigationReport:
         summary=dict(data.get("summary") or {}),
         assessment=assessment,
         warnings=list(data.get("warnings") or []),
+        coverage=list(data.get("coverage") or []),
+        final_review=dict(data.get("final_review") or {}),
         version=str(data.get("version") or "artifact"),
     )
 

@@ -16,6 +16,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
     """Create every table, then apply migrations for pre-existing databases."""
     conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
     _migrate(conn)
+    conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -42,6 +43,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.executescript(
             """
             PRAGMA foreign_keys=OFF;
+            DROP TABLE IF EXISTS coverage_ledger;
+            DROP TABLE IF EXISTS evidence_records;
             ALTER TABLE investigations RENAME TO investigations_old;
             CREATE TABLE investigations (
                 investigation_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,3 +67,5 @@ def _migrate(conn: sqlite3.Connection) -> None:
             PRAGMA foreign_keys=ON;
             """
         )
+
+    conn.execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (5)")

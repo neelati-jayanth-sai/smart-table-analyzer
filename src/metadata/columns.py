@@ -1,141 +1,144 @@
-"""Analyze column statistics for partitioning and optimization recommendations."""
+"""Bounded, deterministic profiling for every primitive table column."""
 
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
-# Tuning knobs — override via env vars
-_COL_TIMEOUT = int(os.getenv("COL_ANALYSIS_TIMEOUT_SECONDS", "15"))
-_COL_WORKERS = int(os.getenv("COL_ANALYSIS_WORKERS", "1"))
-_COL_MAX = int(os.getenv("COL_ANALYSIS_MAX_COLUMNS", "8"))
-
-# Column types most likely to be partition candidates — analysed first
-_PRIORITY_TYPES = {"date", "timestamp", "string", "int", "bigint", "long", "smallint", "short", "decimal"}
-_SKIP_TYPES = {"array", "map", "struct", "binary"}
-
-
-def _priority_columns(columns: list[dict[str, str]], cap: int) -> list[dict[str, str]]:
-    """Return up to `cap` columns, prioritising date/timestamp/string/int types.
-    Deprioritizes flag/indicator columns as they usually have cardinality 2.
-    """
-    priority, rest = [], []
-    for col in columns:
-        name = col["name"].lower()
-        t = col["type"].lower().split("(")[0].strip()
-        is_priority_type = t in _PRIORITY_TYPES
-        is_flag = name.endswith("_flg") or name.endswith("_ind") or name.startswith("is_")
-
-        if is_priority_type and not is_flag:
-            priority.append(col)
-        else:
-            rest.append(col)
-    return (priority + rest)[:cap]
-
-
-def _analyze_one_column(
-    spark, table_name: str, col: dict[str, str], row_count: int
-) -> tuple[str, dict[str, Any]]:
-    """Fetch cardinality + null count for one column in a single combined SQL."""
-    col_name = col["name"]
-    col_type = col["type"]
-
-    if any(t in col_type.lower() for t in _SKIP_TYPES):
-        return col_name, {"type": col_type, "skipped": True,
-                          "reason": "Complex type not suitable for cardinality analysis"}
-
-    query = (
-        f"SELECT COUNT(DISTINCT {col_name}), "
-        f"COUNT(*) - COUNT({col_name}) "
-        f"FROM {table_name}"
-    )
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(lambda: spark.sql(query).first())
-    try:
-        row = future.result(timeout=_COL_TIMEOUT)
-    except FuturesTimeoutError:
-        future.cancel()
-        executor.shutdown(wait=False, cancel_futures=True)
-        return col_name, {
-            "type": col_type,
-            "timeout": True,
-            "cancellation_status": "unconfirmed",
-        }
-    except Exception as exc:
-        executor.shutdown(wait=False, cancel_futures=True)
-        return col_name, {"type": col_type, "error": str(exc)}
-    else:
-        executor.shutdown(wait=False, cancel_futures=True)
-
-    cardinality = int(row[0] or 0)
-    null_count = int(row[1] or 0)
-    null_pct = round((null_count / row_count) * 100, 2) if row_count > 0 else 0.0
-    cardinality_ratio = cardinality / row_count if row_count > 0 else 0
-
-    is_high_cardinality = cardinality > 1000 or cardinality_ratio > 0.1
-    is_partition_candidate = (
-        100 < cardinality < 10000
-        and null_pct < 5
-        and 0.001 < cardinality_ratio < 0.5
-    )
-
-    return col_name, {
-        "type": col_type,
-        "cardinality": cardinality,
-        "null_percentage": null_pct,
-        "is_high_cardinality": is_high_cardinality,
-        "is_partition_candidate": is_partition_candidate,
-        "cardinality_ratio": round(cardinality_ratio, 4),
-    }
+_BATCH_SIZE = max(1, int(os.getenv("COL_ANALYSIS_BATCH_SIZE", "8")))
+_RANGE_TYPES = {
+    "byte", "short", "int", "integer", "bigint", "long", "float", "double",
+    "decimal", "date", "timestamp", "timestamp_ntz",
+}
+_NON_PRIMITIVE_TYPES = {"array", "map", "struct", "binary", "variant", "void", "null"}
 
 
 def analyze_columns(
     spark, table_name: str, columns: list[dict[str, str]], row_count: int
 ) -> dict[str, Any]:
-    """Analyze column statistics for partitioning recommendations.
+    """Profile every primitive column with bounded aggregate scans.
 
-    Runs at most the configured capped set of combined SQL statements. The
-    default is one worker and eight columns because each statement may scan the
-    base table. A timeout returns promptly, but Spark cancellation is reported
-    as unconfirmed because the connector may continue running server-side.
+    Batches bound statement width. A failed batch falls back to individual
+    columns so one unsupported expression does not hide other column outcomes.
     """
-    if row_count == 0:
-        return {"error": "Cannot analyze columns for empty table"}
+    column_stats = _skipped_columns(columns)
+    profileable = [col for col in columns if _type_name(col["type"]) not in _NON_PRIMITIVE_TYPES]
+    if row_count <= 0:
+        for col in profileable:
+            column_stats[col["name"]] = _skipped(col, "empty_table")
+        return _result(column_stats, len(columns), 0)
 
-    columns_to_analyze = _priority_columns(columns, _COL_MAX)
-    column_stats: dict[str, Any] = {}
-    partition_candidates: list[dict[str, Any]] = []
+    batches = _batches(profileable, _BATCH_SIZE)
+    for batch in batches:
+        _profile_batch(spark, table_name, batch, row_count, column_stats)
+    return _result(column_stats, len(columns), len(batches))
 
-    with ThreadPoolExecutor(max_workers=max(1, _COL_WORKERS)) as pool:
-        futures = {
-            pool.submit(_analyze_one_column, spark, table_name, col, row_count): col["name"]
-            for col in columns_to_analyze
-        }
-        for future in futures:
-            col_name = futures[future]
-            try:
-                name, stats = future.result()
-                column_stats[name] = stats
-                if stats.get("is_partition_candidate"):
-                    partition_candidates.append({
-                        "column": name,
-                        "cardinality": stats["cardinality"],
-                        "null_percentage": stats["null_percentage"],
-                        "type": stats["type"],
-                    })
-            except Exception as exc:
-                column_stats[col_name] = {"error": str(exc)}
+def _profile_batch(spark, table_name: str, columns: list[dict[str, str]], row_count: int,
+                   column_stats: dict[str, dict[str, Any]]) -> None:
+    try:
+        row = spark.sql(_query(table_name, columns)).first()
+    except Exception:
+        for col in columns:
+            _profile_one(spark, table_name, col, row_count, column_stats)
+        return
+    for index, col in enumerate(columns):
+        column_stats[col["name"]] = _completed(col, row, index, row_count)
 
-    partition_candidates.sort(key=lambda x: x["cardinality"])
-    timed_out_columns = [
-        name for name, stats in column_stats.items() if stats.get("timeout")
-    ]
-    return {
-        "column_stats": column_stats,
-        "partition_candidates": partition_candidates[:10],
-        "total_columns_analyzed": len(columns_to_analyze),
-        "collection_status": "partial" if timed_out_columns else "complete",
-        "timed_out_columns": timed_out_columns,
-        "cancellation_status": "unconfirmed" if timed_out_columns else "not_needed",
+
+def _profile_one(spark, table_name: str, col: dict[str, str], row_count: int,
+                 column_stats: dict[str, dict[str, Any]]) -> None:
+    try:
+        row = spark.sql(_query(table_name, [col])).first()
+        column_stats[col["name"]] = _completed(col, row, 0, row_count)
+    except FuturesTimeoutError:
+        column_stats[col["name"]] = _failed(col, "timeout", timeout=True)
+    except Exception as exc:
+        column_stats[col["name"]] = _failed(col, str(exc))
+
+
+def _query(table_name: str, columns: list[dict[str, str]]) -> str:
+    expressions = ["COUNT(*) AS profile_row_count"]
+    for index, col in enumerate(columns):
+        name = _identifier(col["name"])
+        expressions += [
+            f"COUNT(DISTINCT {name}) AS c{index}_cardinality",
+            f"COUNT(*) - COUNT({name}) AS c{index}_null_count",
+        ]
+        if _type_name(col["type"]) in _RANGE_TYPES:
+            expressions += [f"MIN({name}) AS c{index}_min", f"MAX({name}) AS c{index}_max"]
+    return f"SELECT {', '.join(expressions)} FROM {table_name}"
+
+
+def _completed(col: dict[str, str], row: Any, index: int, fallback_rows: int) -> dict[str, Any]:
+    profiled_rows = int(_value(row, "profile_row_count", fallback_rows) or fallback_rows)
+    cardinality = int(_value(row, f"c{index}_cardinality", 0) or 0)
+    null_count = int(_value(row, f"c{index}_null_count", 0) or 0)
+    ratio = cardinality / profiled_rows if profiled_rows else 0.0
+    null_pct = (null_count / profiled_rows * 100) if profiled_rows else 0.0
+    stats = {
+        "type": col["type"], "status": "completed", "method": "exact_aggregate_scan",
+        "profiled_row_count": profiled_rows, "cardinality": cardinality,
+        "null_count": null_count, "null_percentage": round(null_pct, 2),
+        "cardinality_ratio": round(ratio, 4),
+        "is_high_cardinality": cardinality > 1000 or ratio > 0.1,
+        "is_partition_candidate": 100 < cardinality < 10000 and null_pct < 5 and 0.001 < ratio < 0.5,
     }
+    if _type_name(col["type"]) in _RANGE_TYPES:
+        stats["distribution_hint"] = {
+            "kind": "range", "min": _value(row, f"c{index}_min"), "max": _value(row, f"c{index}_max"),
+        }
+    else:
+        stats["distribution_hint"] = {"kind": "not_assessed", "reason": "type_has_no_low_cost_range"}
+    return stats
+
+
+def _skipped_columns(columns: list[dict[str, str]]) -> dict[str, dict[str, Any]]:
+    return {
+        col["name"]: _skipped(col, "non_primitive_type")
+        for col in columns if _type_name(col["type"]) in _NON_PRIMITIVE_TYPES
+    }
+
+
+def _skipped(col: dict[str, str], reason: str) -> dict[str, Any]:
+    return {"type": col["type"], "status": "skipped", "skipped": True, "reason": reason}
+
+
+def _failed(col: dict[str, str], reason: str, timeout: bool = False) -> dict[str, Any]:
+    return {"type": col["type"], "status": "failed", "error": reason, "timeout": timeout}
+
+
+def _result(column_stats: dict[str, dict[str, Any]], declared: int, batch_count: int) -> dict[str, Any]:
+    stats = list(column_stats.values())
+    candidates = [
+        {"column": name, "cardinality": stat["cardinality"], "null_percentage": stat["null_percentage"], "type": stat["type"]}
+        for name, stat in column_stats.items() if stat.get("is_partition_candidate")
+    ]
+    candidates.sort(key=lambda candidate: candidate["cardinality"])
+    failed = sum(stat.get("status") == "failed" for stat in stats)
+    return {
+        "status": "completed" if not failed else "partial", "profile_method": "exact_aggregate_scan",
+        "column_stats": column_stats, "partition_candidates": candidates[:10],
+        "total_columns_declared": declared, "total_columns_analyzed": sum(stat.get("status") == "completed" for stat in stats),
+        "total_columns_skipped": sum(stat.get("status") == "skipped" for stat in stats),
+        "total_columns_failed": failed, "batch_size": _BATCH_SIZE, "batch_count": batch_count,
+    }
+
+
+def _batches(columns: list[dict[str, str]], size: int) -> list[list[dict[str, str]]]:
+    return [columns[index:index + size] for index in range(0, len(columns), size)]
+
+
+def _identifier(name: str) -> str:
+    return f"`{name.replace('`', '``')}`"
+
+
+def _type_name(type_name: str) -> str:
+    return type_name.lower().split("(", 1)[0].split("<", 1)[0].strip()
+
+
+def _value(row: Any, key: str, default: Any = None) -> Any:
+    try:
+        return row[key]
+    except (KeyError, TypeError, IndexError):
+        return default

@@ -53,3 +53,39 @@ def appendix(report: InvestigationReport) -> list[str]:
         if partition.get("table_ddl"):
             lines += ["", "```sql", str(partition["table_ddl"]).strip(), "```"]
     return lines
+
+
+def coverage(report: InvestigationReport) -> list[str]:
+    """Render deterministic collection coverage without interpreting it as findings."""
+    if not report.coverage:
+        return ["No deterministic collection coverage was recorded."]
+    lines = ["| Module | Status | Reason | Evidence IDs |", "|---|---|---|---|"]
+    for entry in report.coverage:
+        status = "Not assessed" if entry.get("status") == "skipped" else entry.get("status", "unknown")
+        evidence_ids = ", ".join(entry.get("evidence_ids") or []) or "none"
+        lines.append(
+            f"| {entry.get('module', 'unknown')} | {status} | "
+            f"{entry.get('reason') or 'n/a'} | {evidence_ids} |"
+        )
+    return lines
+
+
+def final_review(report: InvestigationReport) -> list[str]:
+    """Render the whole-run critic output, including its safe fallback state."""
+    review = report.final_review or {}
+    status = review.get("status", "not_available")
+    lines = [f"- Status: {status}", f"- Outcome: {review.get('outcome', 'not_assessed')}"]
+    lines.append(f"- Summary: {review.get('summary') or 'Whole-run review was not recorded.'}")
+    if review.get("error"):
+        lines.append(f"- Review error: {review['error']}")
+    for field, label in (
+        ("consistency_issues", "Consistency issues"),
+        ("unsupported_certainty", "Unsupported certainty"),
+        ("duplicate_recommendations", "Duplicate recommendations"),
+        ("missing_justification", "Missing justification"),
+        ("coverage_gaps", "Coverage gaps"),
+    ):
+        items = review.get(field) or []
+        if items:
+            lines += ["", f"{label}:"] + [f"- {item}" for item in items]
+    return lines

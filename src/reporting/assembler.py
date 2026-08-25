@@ -35,6 +35,11 @@ class ReportAssembler:
         trail = self._db.list_trail(investigation_id)
         hook_violations = self._db.list_hook_violations(investigation_id)
         knowledge_references = self._db.get_knowledge_references(investigation_id)
+        coverage = _coverage_rows(self._db.get_coverage_ledger(investigation_id))
+        final_review = self._db.get_final_review(investigation_id) or {
+            "status": "not_available", "summary": "Whole-run review was not recorded."
+        }
+        evidence = self._db.list_evidence(investigation_id)
 
         finding_dicts = []
         for finding in findings:
@@ -70,10 +75,13 @@ class ReportAssembler:
                 and f.get("db_validated")
                 and f["validation"]["valid"]
             ),
+            "coverage_completed": sum(item["status"] == "completed" for item in coverage),
+            "coverage_total": len(coverage),
         }
 
         assessment = assess(
-            investigation.status, baseline, finding_dicts, hook_violations
+            investigation.status, baseline, finding_dicts, hook_violations,
+            coverage=coverage, collection_profile=_collection_profile(evidence), final_review=final_review,
         )
         return InvestigationReport(
             investigation_id=investigation_id,
@@ -99,7 +107,11 @@ class ReportAssembler:
                 hook_violations,
                 investigation.status,
                 baseline.get("signals") or [],
+                coverage,
+                final_review,
             ),
+            coverage=coverage,
+            final_review=final_review,
         )
 
 
@@ -117,12 +129,27 @@ def _sql_for_check(trail: list[dict[str, Any]], check_num: int) -> list[dict[str
     ]
 
 
+def _coverage_rows(ledger) -> list[dict[str, Any]]:
+    return [
+        {"module": entry.module_name, "status": entry.availability.state.value,
+         "reason": entry.availability.reason, "evidence_ids": list(entry.evidence_ids)}
+        for entry in ledger.entries
+    ]
+
+
+def _collection_profile(evidence) -> str | None:
+    identity = next((record for record in evidence if record.module_name == "identity_schema"), None)
+    return identity.payload.get("collection_profile") if identity else None
+
+
 def _warnings(
     findings: list[dict[str, Any]],
     trail: list[dict[str, Any]],
     hook_violations: list[dict[str, Any]],
     status: str,
     signals: list[dict[str, Any]],
+    coverage: list[dict[str, Any]],
+    final_review: dict[str, Any],
 ) -> list[str]:
     """Surface degraded execution instead of hiding it behind an empty finding."""
     warnings: list[str] = []
@@ -158,4 +185,9 @@ def _warnings(
         )
     if status != "completed":
         warnings.append(f"Investigation ended with status '{status}'.")
+    fast_skips = [item for item in coverage if item["module"] == "column_profile" and item["status"] == "skipped"]
+    if fast_skips:
+        warnings.append("Column profiling was not assessed in Fast collection.")
+    if final_review.get("status") != "completed":
+        warnings.append("Whole-run consistency review was unavailable; inspect coverage directly.")
     return warnings

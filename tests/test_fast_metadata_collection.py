@@ -18,6 +18,7 @@ def test_fast_profile_uses_iceberg_metadata_not_base_table_scans():
     context = LegacyAnalyzer(spark, MetadataCollectionProfile.from_name("fast")).collect(table.name)
 
     assert context.metadata["collection_profile"] == "fast"
+    assert context.metadata["collection_contract"]["column_profile"] == "disabled"
     assert context.metadata["sample_rows"] == []
     assert context.metadata["column_analysis"] == {"status": "not_collected_in_fast_profile"}
     assert context.baseline["dimensions"]["row_count"] == table.row_count
@@ -31,3 +32,4 @@ def test_deep_profile_keeps_data_profiling_an_explicit_choice():
 
     assert profile.include_sample_rows is True
     assert profile.analyze_column_stats is True
+    assert profile.contract()["column_profile"] == "all_primitive_columns_in_bounded_batches"

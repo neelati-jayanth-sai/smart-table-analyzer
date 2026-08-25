@@ -5,6 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from src.evidence import (
+    Availability,
+    AvailabilityState,
+    CoverageEntry,
+    CoverageLedger,
+    EvidenceClass,
+    EvidenceProvenance,
+    EvidenceRecord,
+)
 from src.models import Finding, Investigation
 
 
@@ -74,6 +83,54 @@ class InvestigationReadOperations:
     def list_hook_violations(self, investigation_id: int) -> list[dict[str, Any]]:
         return self._list_rows("hook_violations", "violation_id", investigation_id)
 
+    def list_evidence(self, investigation_id: int) -> list[EvidenceRecord]:
+        """Return typed evidence in collection order for one investigation."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM evidence_records WHERE investigation_id = ?
+                ORDER BY evidence_record_id""",
+                (investigation_id,),
+            ).fetchall()
+        return [self._evidence_record(row) for row in rows]
+
+    def get_evidence(self, evidence_id: int) -> EvidenceRecord | None:
+        """Return one evidence record by its persistent identifier."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM evidence_records WHERE evidence_record_id = ?", (evidence_id,)
+            ).fetchone()
+        return self._evidence_record(row) if row is not None else None
+
+    def get_coverage_ledger(self, investigation_id: int) -> CoverageLedger:
+        """Return one ordered coverage ledger for a completed or partial run."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM coverage_ledger WHERE investigation_id = ?
+                ORDER BY coverage_id""",
+                (investigation_id,),
+            ).fetchall()
+        entries = tuple(
+            CoverageEntry(
+                module_name=row["module_name"],
+                availability=Availability(
+                    AvailabilityState(row["availability_state"]), row["reason"]
+                ),
+                evidence_ids=tuple(json.loads(row["evidence_ids_json"])),
+            )
+            for row in rows
+        )
+        return CoverageLedger(entries)
+
+    def get_final_review(self, investigation_id: int) -> dict[str, Any] | None:
+        """Return the persisted whole-run review, including fallback state."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT review_json FROM investigation_final_reviews
+                WHERE investigation_id = ?""",
+                (investigation_id,),
+            ).fetchone()
+        return json.loads(row["review_json"]) if row is not None else None
+
     def _list_rows(self, table: str, order: str, investigation_id: int) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -81,6 +138,20 @@ class InvestigationReadOperations:
                 (investigation_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    @staticmethod
+    def _evidence_record(row: Any) -> EvidenceRecord:
+        provenance = json.loads(row["provenance_json"])
+        return EvidenceRecord(
+            evidence_id=f"evidence:{row['evidence_record_id']}", module_name=row["module_name"],
+            classification=EvidenceClass(row["classification"]),
+            availability=Availability(
+                AvailabilityState(row["availability_state"]), row["availability_reason"]
+            ),
+            summary=row["summary"], payload=json.loads(row["payload_json"]),
+            provenance=EvidenceProvenance(**provenance), confidence=row["confidence"],
+            exploratory=bool(row["exploratory"]),
+        )
 
     def list_investigations(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._connect() as conn:

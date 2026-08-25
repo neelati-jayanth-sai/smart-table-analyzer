@@ -141,3 +141,57 @@ CREATE TABLE IF NOT EXISTS investigation_state_snapshots (
 );
 
 CREATE INDEX IF NOT EXISTS idx_state_snapshots_investigation ON investigation_state_snapshots(investigation_id, check_num);
+
+-- Typed evidence collected by reusable measurement modules.
+CREATE TABLE IF NOT EXISTS evidence_records (
+    evidence_record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    investigation_id INTEGER NOT NULL,
+    module_name TEXT NOT NULL,
+    classification TEXT NOT NULL CHECK (classification IN (
+        'verified_fact', 'configuration_risk', 'hypothesis', 'not_assessed')),
+    availability_state TEXT NOT NULL CHECK (availability_state IN (
+        'completed', 'unavailable', 'skipped', 'failed')),
+    availability_reason TEXT,
+    summary TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    provenance_json TEXT NOT NULL,
+    confidence REAL,
+    exploratory BOOLEAN NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (investigation_id) REFERENCES investigations(investigation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_records_investigation
+    ON evidence_records(investigation_id, evidence_record_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_records_module
+    ON evidence_records(investigation_id, module_name);
+
+-- One current coverage outcome per evidence module for each investigation.
+CREATE TABLE IF NOT EXISTS coverage_ledger (
+    coverage_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    investigation_id INTEGER NOT NULL,
+    module_name TEXT NOT NULL,
+    availability_state TEXT NOT NULL CHECK (availability_state IN (
+        'completed', 'unavailable', 'skipped', 'failed')),
+    reason TEXT,
+    evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (investigation_id) REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    UNIQUE(investigation_id, module_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_ledger_investigation
+    ON coverage_ledger(investigation_id, coverage_id);
+
+CREATE TABLE IF NOT EXISTS investigation_final_reviews (
+    final_review_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    investigation_id INTEGER NOT NULL UNIQUE,
+    review_status TEXT NOT NULL CHECK (review_status IN ('completed', 'fallback', 'invalid')),
+    review_json TEXT NOT NULL,
+    error_message TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (investigation_id) REFERENCES investigations(investigation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_final_reviews_investigation
+    ON investigation_final_reviews(investigation_id);

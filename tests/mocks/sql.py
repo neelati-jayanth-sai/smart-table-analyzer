@@ -36,11 +36,11 @@ _CLAUSES = re.compile(
 _CONDITION = re.compile(r"^\s*(?P<col>[\w.]+)\s*(?P<op>!=|<>|>=|<=|=|>|<)\s*(?P<value>.+?)\s*$")
 
 _COUNT_STAR_MINUS_COUNT = re.compile(
-    r"^COUNT\(\s*\*\s*\)\s*-\s*COUNT\(\s*(?P<col>[\w.]+)\s*\)$", re.IGNORECASE
+    r"^COUNT\(\s*\*\s*\)\s*-\s*COUNT\(\s*(?P<col>[\w.`]+)\s*\)$", re.IGNORECASE
 )
 _COALESCE = re.compile(r"^COALESCE\(\s*(?P<inner>.+?)\s*,\s*(?P<default>[^,()]+)\s*\)$", re.IGNORECASE)
 _AGGREGATE = re.compile(
-    r"^(?P<func>COUNT|SUM|MIN|MAX|AVG)\(\s*(?P<distinct>DISTINCT\s+)?(?P<col>\*|[\w.]+)\s*\)$",
+    r"^(?P<func>COUNT|SUM|MIN|MAX|AVG)\(\s*(?P<distinct>DISTINCT\s+)?(?P<col>\*|[\w.`]+)\s*\)$",
     re.IGNORECASE,
 )
 

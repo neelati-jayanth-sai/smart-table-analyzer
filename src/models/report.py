@@ -32,6 +32,8 @@ class InvestigationReport:
     summary: dict[str, Any]
     assessment: Assessment
     warnings: list[str] = field(default_factory=list)
+    coverage: list[dict[str, Any]] = field(default_factory=list)
+    final_review: dict[str, Any] = field(default_factory=dict)
     version: str = REPORT_VERSION
 
     @property
@@ -80,4 +82,6 @@ class InvestigationReport:
             "hook_violations": self.hook_violations,
             "trail": self.trail,
             "summary": self.summary,
+            "coverage": self.coverage,
+            "final_review": self.final_review,
         }

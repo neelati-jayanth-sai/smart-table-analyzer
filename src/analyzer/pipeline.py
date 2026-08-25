@@ -10,6 +10,8 @@ from pathlib import Path
 
 from src.database import InvestigationDb
 from src.context import InvestigationContext
+from src.evidence import CollectionEvidenceAdapter, persist_collection_evidence
+from src.investigator.critic import run_final_review
 from src.investigator import Investigator
 from src.investigator.investigator import InvestigationResult
 from src.query import QueryWorkbench, create_investigation_hooks
@@ -20,7 +22,6 @@ from src.metadata.collection_profile import MetadataCollectionProfile
 
 from .legacy_analyzer import LegacyAnalyzer
 from .progress import AnalysisProgress, ProgressCallback
-
 logger = logging.getLogger(__name__)
 @dataclass
 class AnalysisOutcome:
@@ -84,6 +85,11 @@ class SmartTableAnalyzer:
                 table_name, catalog_name, schema_name, snapshot_id, query_metrics_table
             )
             context.investigation_id = investigation_id
+            context.evidence_refs.extend(
+                persist_collection_evidence(
+                    self.db, investigation_id, CollectionEvidenceAdapter().build(context)
+                )
+            )
             self.db.record_baseline_score(
                 investigation_id,
                 context.baseline["overall"],
@@ -96,6 +102,7 @@ class SmartTableAnalyzer:
 
             self._progress("investigating", "Running evidence checks", investigation_id)
             result = self._investigate(investigation_id, context)
+            self.db.record_final_review(investigation_id, run_final_review(self.llm, self.db, investigation_id))
         except Exception as exc:
             logger.exception(
                 "Investigation failed before conclusions were reached",

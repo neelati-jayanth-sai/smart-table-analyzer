@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from src.models import InvestigationReport
 
-from .closing_sections import appendix, recommendations
+from .closing_sections import appendix, coverage, final_review, recommendations
 
 from .sections import (
     _evidence,
@@ -27,4 +27,6 @@ def render_markdown(report: InvestigationReport) -> str:
     lines += ["", "## 4. SQL Validation", ""] + _sql_validation(report)
     lines += ["", "## 5. Recommendations", ""] + recommendations(report)
     lines += ["", "## 6. Metadata Appendix", ""] + appendix(report)
+    lines += ["", "## 7. Deterministic Coverage", ""] + coverage(report)
+    lines += ["", "## 8. Whole-run Review", ""] + final_review(report)
     return "\n".join(lines) + "\n"

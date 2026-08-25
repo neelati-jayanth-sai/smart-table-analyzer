@@ -13,6 +13,9 @@ def assess(
     baseline: dict[str, Any],
     findings: list[dict[str, Any]],
     hook_violations: list[dict[str, Any]],
+    coverage: list[dict[str, Any]] | None = None,
+    collection_profile: str | None = None,
+    final_review: dict[str, Any] | None = None,
 ) -> Assessment:
     """Return the only assessment state report consumers may present."""
     if lifecycle_state != "completed":
@@ -53,6 +56,13 @@ def assess(
             "needs_review",
             ["One or more checks could not establish a clean result."],
         )
+    failed_modules = [item["module"] for item in coverage or [] if item.get("status") == "failed"]
+    if collection_profile == "deep" and failed_modules:
+        return Assessment(
+            "needs_review", [f"Deep collection failed required module(s): {', '.join(failed_modules)}."],
+        )
+    if (final_review or {}).get("status") == "completed" and (final_review or {}).get("outcome") == "needs_review":
+        return Assessment("needs_review", ["Whole-run review identified evidence or consistency gaps."])
     return Assessment("clean", ["All completed checks returned validated clean evidence."])
 
 

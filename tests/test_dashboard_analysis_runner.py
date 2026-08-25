@@ -21,8 +21,9 @@ def test_analysis_request_rejects_incomplete_or_unsafe_table_names():
         AnalysisRequest(table_name="cat.schema.orders; DROP TABLE x").resolved_table()
 
 
-def test_analysis_request_maps_shallow_to_the_fast_collector_profile():
+def test_analysis_request_maps_fast_and_legacy_shallow_to_the_fast_collector_profile():
     assert AnalysisRequest(table_name="orders").resolved_metadata_profile() == "fast"
+    assert AnalysisRequest(table_name="orders", metadata_profile="shallow").resolved_metadata_profile() == "fast"
     assert AnalysisRequest(table_name="orders", metadata_profile="deep").resolved_metadata_profile() == "deep"
 
 

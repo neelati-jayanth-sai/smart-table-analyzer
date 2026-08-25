@@ -47,9 +47,9 @@ def _render_analysis_form() -> None:
         )
         profile = st.radio(
             "Analysis depth",
-            ("shallow", "deep"),
-            horizontal=True,
-            help="Shallow reads metadata only. Deep also profiles table data and can take longer.",
+            ("fast", "deep"),
+            index=0,
+            help="Fast is metadata-only. Deep profiles every primitive column in bounded aggregate batches.",
         )
         with st.expander("Advanced options"):
             query_table = st.text_input("Query metrics table (optional)")

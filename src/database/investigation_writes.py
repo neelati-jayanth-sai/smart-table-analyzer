@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 
+from src.evidence import CoverageEntry, EvidenceRecord
 from src.models import Finding
 
 
@@ -82,3 +84,62 @@ class InvestigationWriteOperations:
                 (investigation_id, check_num, query_text, hook_name, reason or ""),
             )
             return int(cursor.lastrowid)
+
+    def record_evidence(self, investigation_id: int, evidence: EvidenceRecord) -> int:
+        """Persist one evidence observation without changing existing finding flow."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """INSERT INTO evidence_records
+                (investigation_id, module_name, classification, availability_state,
+                 availability_reason, summary, payload_json, provenance_json,
+                 confidence, exploratory)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    investigation_id, evidence.module_name, evidence.classification.value,
+                    evidence.availability.state.value, evidence.availability.reason, evidence.summary,
+                    json.dumps(dict(evidence.payload), default=str),
+                    json.dumps(asdict(evidence.provenance), default=str), evidence.confidence,
+                    1 if evidence.exploratory else 0,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def record_coverage(self, investigation_id: int, entry: CoverageEntry) -> int:
+        """Upsert the current coverage outcome for one evidence module."""
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO coverage_ledger
+                (investigation_id, module_name, availability_state, reason, evidence_ids_json)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(investigation_id, module_name) DO UPDATE SET
+                    availability_state=excluded.availability_state,
+                    reason=excluded.reason,
+                    evidence_ids_json=excluded.evidence_ids_json,
+                    updated_at=datetime('now')""",
+                (
+                    investigation_id, entry.module_name, entry.availability.state.value,
+                    entry.availability.reason, json.dumps(list(entry.evidence_ids)),
+                ),
+            )
+            row = conn.execute(
+                """SELECT coverage_id FROM coverage_ledger
+                WHERE investigation_id = ? AND module_name = ?""",
+                (investigation_id, entry.module_name),
+            ).fetchone()
+            return int(row["coverage_id"])
+
+    def record_final_review(self, investigation_id: int, review: dict[str, Any]) -> None:
+        """Upsert one whole-investigation critique without changing findings."""
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO investigation_final_reviews
+                (investigation_id, review_status, review_json, error_message)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(investigation_id) DO UPDATE SET
+                    review_status=excluded.review_status, review_json=excluded.review_json,
+                    error_message=excluded.error_message, created_at=datetime('now')""",
+                (
+                    investigation_id, review["status"], json.dumps(review, default=str),
+                    review.get("error"),
+                ),
+            )

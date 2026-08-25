@@ -20,7 +20,7 @@ class AnalysisRequest:
     table_name: str
     snapshot_id: str | None = None
     query_metrics_table: str | None = None
-    metadata_profile: str = "shallow"
+    metadata_profile: str = "fast"
     max_checks: int = 5
 
     def resolved_table(self) -> tuple[str, str, str]:
@@ -30,13 +30,13 @@ class AnalysisRequest:
         return parts[0], parts[1], self.table_name.strip()
 
     def resolved_metadata_profile(self) -> str:
-        """Map the UI's shallow/deep choice to the collector interface."""
+        """Accept Fast and Deep plus the legacy shallow input alias."""
         profile = self.metadata_profile.strip().lower()
-        if profile == "shallow":
+        if profile in {"fast", "shallow"}:
             return "fast"
         if profile == "deep":
             return "deep"
-        raise ValueError("Metadata profile must be shallow or deep.")
+        raise ValueError("Metadata profile must be fast or deep (legacy: shallow).")
 
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
