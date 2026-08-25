@@ -21,7 +21,9 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
-_VERSION_AS_OF = re.compile(r"\s+VERSION\s+AS\s+OF\s+\d+", re.IGNORECASE)
+_VERSION_AS_OF = re.compile(
+    r"\s+VERSION\s+AS\s+OF\s+(?:\d+|'[^']+'|[A-Za-z_][\w-]*)", re.IGNORECASE
+)
 
 _CLAUSES = re.compile(
     r"^\s*SELECT\s+(?P<items>.+?)"

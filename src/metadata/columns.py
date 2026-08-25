@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
+from src.metadata.query_executor import MetadataQueryExecutor, QueryObservation
+
 _BATCH_SIZE = max(1, int(os.getenv("COL_ANALYSIS_BATCH_SIZE", "8")))
+_COL_TIMEOUT = float(os.getenv("COL_ANALYSIS_TIMEOUT_SECONDS", "15"))
+# Kept as compatibility tuning names. Deep profiling uses bounded aggregate
+# batches rather than a capped or concurrent set of column scans.
+_COL_WORKERS = 1
+_COL_MAX = 8
 _RANGE_TYPES = {
     "byte", "short", "int", "integer", "bigint", "long", "float", "double",
     "decimal", "date", "timestamp", "timestamp_ntz",
@@ -30,31 +36,38 @@ def analyze_columns(
         return _result(column_stats, len(columns), 0)
 
     batches = _batches(profileable, _BATCH_SIZE)
+    executor = MetadataQueryExecutor(spark, _COL_TIMEOUT)
     for batch in batches:
-        _profile_batch(spark, table_name, batch, row_count, column_stats)
+        _profile_batch(executor, spark, table_name, batch, row_count, column_stats)
     return _result(column_stats, len(columns), len(batches))
 
-def _profile_batch(spark, table_name: str, columns: list[dict[str, str]], row_count: int,
+def _profile_batch(executor: MetadataQueryExecutor, spark, table_name: str,
+                   columns: list[dict[str, str]], row_count: int,
                    column_stats: dict[str, dict[str, Any]]) -> None:
-    try:
-        row = spark.sql(_query(table_name, columns)).first()
-    except Exception:
+    observation = _read(executor, spark, _query(table_name, columns))
+    if observation.status != "success":
         for col in columns:
-            _profile_one(spark, table_name, col, row_count, column_stats)
+            _profile_one(executor, spark, table_name, col, row_count, column_stats)
         return
+    row = observation.value
     for index, col in enumerate(columns):
         column_stats[col["name"]] = _completed(col, row, index, row_count)
 
 
-def _profile_one(spark, table_name: str, col: dict[str, str], row_count: int,
+def _profile_one(executor: MetadataQueryExecutor, spark, table_name: str,
+                 col: dict[str, str], row_count: int,
                  column_stats: dict[str, dict[str, Any]]) -> None:
-    try:
-        row = spark.sql(_query(table_name, [col])).first()
-        column_stats[col["name"]] = _completed(col, row, 0, row_count)
-    except FuturesTimeoutError:
-        column_stats[col["name"]] = _failed(col, "timeout", timeout=True)
-    except Exception as exc:
-        column_stats[col["name"]] = _failed(col, str(exc))
+    observation = _read(executor, spark, _query(table_name, [col]))
+    if observation.status == "success":
+        column_stats[col["name"]] = _completed(col, observation.value, 0, row_count)
+    elif observation.timed_out:
+        column_stats[col["name"]] = _failed(col, observation.error or "timeout", timeout=True)
+    else:
+        column_stats[col["name"]] = _failed(col, observation.error or "query failed")
+
+
+def _read(executor: MetadataQueryExecutor, spark, query: str) -> QueryObservation:
+    return executor.execute(lambda: spark.sql(query).first())
 
 
 def _query(table_name: str, columns: list[dict[str, str]]) -> str:
@@ -105,7 +118,10 @@ def _skipped(col: dict[str, str], reason: str) -> dict[str, Any]:
 
 
 def _failed(col: dict[str, str], reason: str, timeout: bool = False) -> dict[str, Any]:
-    return {"type": col["type"], "status": "failed", "error": reason, "timeout": timeout}
+    return {
+        "type": col["type"], "status": "failed", "error": reason, "timeout": timeout,
+        "cancellation_status": "unconfirmed" if timeout else "not_needed",
+    }
 
 
 def _result(column_stats: dict[str, dict[str, Any]], declared: int, batch_count: int) -> dict[str, Any]:
@@ -116,12 +132,16 @@ def _result(column_stats: dict[str, dict[str, Any]], declared: int, batch_count:
     ]
     candidates.sort(key=lambda candidate: candidate["cardinality"])
     failed = sum(stat.get("status") == "failed" for stat in stats)
+    timed_out_columns = [name for name, stat in column_stats.items() if stat.get("timeout")]
     return {
         "status": "completed" if not failed else "partial", "profile_method": "exact_aggregate_scan",
         "column_stats": column_stats, "partition_candidates": candidates[:10],
         "total_columns_declared": declared, "total_columns_analyzed": sum(stat.get("status") == "completed" for stat in stats),
         "total_columns_skipped": sum(stat.get("status") == "skipped" for stat in stats),
         "total_columns_failed": failed, "batch_size": _BATCH_SIZE, "batch_count": batch_count,
+        "timed_out_columns": timed_out_columns,
+        "collection_status": "partial" if failed else "complete",
+        "cancellation_status": "unconfirmed" if timed_out_columns else "not_needed",
     }
 
 
