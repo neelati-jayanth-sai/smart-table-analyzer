@@ -12,7 +12,8 @@ from src.analyzer.progress import AnalysisProgress
 from src.dashboard import AnalysisRequest, DashboardAnalysisRunner
 from src.dashboard.current_result import render as render_current_result
 from src.database import InvestigationDb, investigation_db_path
-from src.reporting import ReportAssembler
+from src.models import InvestigationReport
+from src.reporting import ReportAssembler, render_pdf
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -114,7 +115,20 @@ def _render_latest_result() -> None:
     report = ReportAssembler(InvestigationDb(investigation_db_path(REPO_ROOT))).assemble(
         outcome.investigation_id
     )
+    _download_report(report)
     render_current_result(outcome, report, st.session_state.get("latest_elapsed_seconds", 0))
+
+
+def _download_report(report: InvestigationReport) -> None:
+    """Offer the selected report without persisting a duplicate dashboard artifact."""
+    name = "_".join(part for part in report.table_name.split(".") if part) or "table"
+    st.download_button(
+        "Download PDF report",
+        data=render_pdf(report),
+        file_name=f"investigation_{report.run_id}_{name}.pdf",
+        mime="application/pdf",
+        help="Downloads the same complete report sections shown for this investigation.",
+    )
 
 
 if __name__ == "__main__":

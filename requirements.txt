@@ -18,6 +18,7 @@ sqlalchemy>=2.0.0
 # Dashboard
 streamlit>=1.30.0
 pandas>=2.0.0
+reportlab>=4.0.0
 
 # SQL parsing for query validation hooks
 sqlparse>=0.4.4
