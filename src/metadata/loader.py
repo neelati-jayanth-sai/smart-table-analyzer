@@ -56,33 +56,53 @@ def load_table_metadata(
     Every sub-read is individually guarded: a table that does not expose
     `.partitions` still yields usable metadata for everything else.
     """
-    logger.info("Loading metadata for %s", table_name)
+    metadata = load_core_table_metadata(spark, table_name, profile)
+    if (profile or MetadataCollectionProfile.from_name(None)).analyze_column_stats:
+        return complete_column_profile(spark, metadata, row_count)
+    return metadata
 
+
+def load_core_table_metadata(
+    spark,
+    table_name: str,
+    profile: MetadataCollectionProfile | None = None,
+) -> dict[str, Any]:
+    """Load facts that do not require an aggregate scan of the base table."""
+    logger.info("Loading core metadata for %s", table_name)
     collection_profile = profile or MetadataCollectionProfile.from_name(None)
     metadata: dict[str, Any] = {
         "table_name": table_name,
         "collection_profile": collection_profile.name,
         "collection_contract": collection_profile.contract(),
-        "collection_contract": collection_profile.contract(),
     }
-
     metadata["columns"] = _columns_of(spark, table_name)
     for suffix in METADATA_SUFFIXES:
         metadata[suffix] = {"columns": _columns_of(spark, f"{table_name}.{suffix}")}
-
     metadata["sample_rows"] = (
         _sample_rows(spark, table_name) if collection_profile.include_sample_rows else []
     )
-    if collection_profile.analyze_column_stats and metadata["columns"]:
-        metadata["column_analysis"] = analyze_columns(
-            spark, table_name, metadata["columns"], row_count
-        )
-    else:
-        metadata["column_analysis"] = {"status": "not_collected_in_fast_profile"}
-
+    metadata["column_analysis"] = {
+        "status": "pending_full_profile"
+        if collection_profile.analyze_column_stats else "not_collected_in_fast_profile"
+    }
     metadata["partition_analysis"] = analyze_partitioning(spark, table_name, metadata)
     metadata["table_properties"] = load_table_properties(
         spark, table_name, metadata["partition_analysis"].get("table_ddl", "")
     )
-
     return _json_safe(metadata)
+
+
+def complete_column_profile(
+    spark, metadata: dict[str, Any], row_count: int
+) -> dict[str, Any]:
+    """Append full primitive-column profiling to already collected core facts."""
+    completed = dict(metadata)
+    table_name = str(completed["table_name"])
+    if completed.get("columns"):
+        completed["column_analysis"] = analyze_columns(
+            spark, table_name, completed["columns"], row_count
+        )
+    else:
+        completed["column_analysis"] = {"status": "completed", "column_stats": {}}
+    completed["partition_analysis"] = analyze_partitioning(spark, table_name, completed)
+    return _json_safe(completed)

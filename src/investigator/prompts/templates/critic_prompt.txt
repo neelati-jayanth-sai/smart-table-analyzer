@@ -7,6 +7,9 @@ DRAFT FINDING:
 QUERY RESULT THE DRAFT IS BASED ON:
 {query_result}
 
+The query result is evidence ID "trail:{check_num}". Retain that ID when the
+draft cites this query result.
+
 Reference knowledge:
 {knowledge_text}
 

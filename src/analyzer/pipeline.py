@@ -5,31 +5,30 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from src.database import InvestigationDb
 from src.context import InvestigationContext
-from src.evidence import CollectionEvidenceAdapter, persist_collection_evidence
+from src.evidence import (
+    CollectionEvidenceAdapter,
+    persist_collection_evidence,
+    persist_column_profile_evidence,
+)
 from src.investigator.critic import run_final_review
 from src.investigator import Investigator
 from src.investigator.investigator import InvestigationResult
 from src.query import QueryWorkbench, create_investigation_hooks
 from src.query.snapshot_pinning import fetch_current_snapshot
-from src.reporting import ReportAssembler, ReportWriter
-from src.validation import ClaimValidator
 from src.metadata.collection_profile import MetadataCollectionProfile
 
-from .legacy_analyzer import LegacyAnalyzer
+from .collection_stage import collect_core, complete_profile, report_core_findings
+from .outcome import AnalysisOutcome
 from .progress import AnalysisProgress, ProgressCallback
+from .report_output import count_unvalidated, write_report
 logger = logging.getLogger(__name__)
-@dataclass
-class AnalysisOutcome:
-    investigation_id: int
-    result: InvestigationResult
-    context: InvestigationContext
-    report_path: Path | None
-    unvalidated_findings: int
+
+
 class SmartTableAnalyzer:
     """Run one table through the full pipeline."""
 
@@ -39,7 +38,7 @@ class SmartTableAnalyzer:
         db: InvestigationDb,
         llm,
         knowledge,
-        max_checks: int = 5,
+        max_checks: int = 10,
         max_retries: int = 3,
         max_workers: int = 1,
         metadata_profile: str | None = None,
@@ -52,7 +51,7 @@ class SmartTableAnalyzer:
         self.max_checks = max_checks
         self.max_retries = max_retries
         self.max_workers = max_workers
-        self.metadata_profile = MetadataCollectionProfile.from_name(metadata_profile)
+        self.metadata_profile = MetadataCollectionProfile.from_name(metadata_profile or "deep")
         self.progress = progress
 
     def analyze(
@@ -81,9 +80,8 @@ class SmartTableAnalyzer:
         self._progress("collecting_metadata", "Collecting Iceberg metadata", investigation_id)
 
         try:
-            context = self._collect(
-                table_name, catalog_name, schema_name, snapshot_id, query_metrics_table
-            )
+            context = collect_core(self.spark, self.metadata_profile, table_name, catalog_name,
+                                   schema_name, snapshot_id, query_metrics_table)
             context.investigation_id = investigation_id
             context.evidence_refs.extend(
                 persist_collection_evidence(
@@ -99,9 +97,8 @@ class SmartTableAnalyzer:
                 context.baseline.get("score_status", "complete"),
                 context.baseline.get("score_reason"),
             )
-
-            self._progress("investigating", "Running evidence checks", investigation_id)
-            result = self._investigate(investigation_id, context)
+            report_core_findings(self._progress, context, investigation_id)
+            context, result = self._investigate_with_profile(investigation_id, context)
             self.db.record_final_review(investigation_id, run_final_review(self.llm, self.db, investigation_id))
         except Exception as exc:
             logger.exception(
@@ -112,9 +109,9 @@ class SmartTableAnalyzer:
             self._progress("error", str(exc), investigation_id)
             raise
 
-        unvalidated = self._count_unvalidated(investigation_id)
+        unvalidated = count_unvalidated(self.db, investigation_id)
         self._progress("rendering_report", "Rendering the investigation report", investigation_id)
-        report_path = self._write_report(investigation_id, output_dir, output_path)
+        report_path = write_report(self.db, investigation_id, output_dir, output_path)
         self._progress("report_complete", "Investigation report is ready", investigation_id)
 
         return AnalysisOutcome(
@@ -126,24 +123,37 @@ class SmartTableAnalyzer:
         )
 
     def _progress(self, stage: str, message: str, investigation_id: int) -> None:
+        try:
+            self.db.append_timeline_event(
+                investigation_id, stage, message, status=_timeline_status(stage)
+            )
+        except Exception:
+            logger.exception("Could not persist investigation timeline event")
         if self.progress is not None:
             self.progress(AnalysisProgress(stage, message, investigation_id))
 
-    def _collect(
-        self,
-        table_name: str,
-        catalog_name: str,
-        schema_name: str,
-        snapshot_id: str | None,
-        query_metrics_table: str | None,
-    ) -> InvestigationContext:
-        """Read metadata once and produce the deterministic source of truth."""
-        return LegacyAnalyzer(self.spark, self.metadata_profile).collect(
-            table_name, catalog_name, schema_name, snapshot_id, query_metrics_table
-        )
+    def _investigate_with_profile(
+        self, investigation_id: int, context: InvestigationContext
+    ) -> tuple[InvestigationContext, InvestigationResult]:
+        """Run full profiling beside the initial evidence investigation."""
+        if not self.metadata_profile.analyze_column_stats:
+            self._progress("investigating", "I am testing the evidence collected so far.", investigation_id)
+            return context, self._investigate(investigation_id, context)
+        self._progress("profiling_columns", "I am profiling every primitive column while I investigate the first findings.", investigation_id)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            profile = pool.submit(complete_profile, self.spark, self.metadata_profile, context)
+            self._progress("investigating", "I am testing the evidence collected so far.", investigation_id)
+            result = self._investigate(investigation_id, context)
+            context = profile.result()
+        context.evidence_refs.append(persist_column_profile_evidence(self.db, investigation_id, context))
+        self._progress("profile_complete", "Full column profile is complete; I am reconciling any new partition evidence.", investigation_id)
+        if any(signal.get("name") == "unpartitioned" for signal in context.signals):
+            result = self._investigate(investigation_id, context, max_checks=1, reconciliation=True)
+        return context, result
 
     def _investigate(
-        self, investigation_id: int, context: InvestigationContext
+        self, investigation_id: int, context: InvestigationContext, max_checks: int | None = None,
+        reconciliation: bool = False,
     ) -> InvestigationResult:
         """Run mandatory evidence-backed investigation checks."""
         workbench = self._build_workbench(context)
@@ -153,12 +163,13 @@ class SmartTableAnalyzer:
             knowledge_retrieval=self.knowledge,
             db=self.db,
             db_path=self.db.db_path,
-            max_checks=self.max_checks,
+            max_checks=max_checks or self.max_checks,
             max_retries_per_check=self.max_retries,
             max_workers=self.max_workers,
         )
         return investigator.run_investigation(
-            investigation_id, context.table_name, context.baseline, context=context
+            investigation_id, context.table_name, context.baseline, context=context,
+            reconciliation=reconciliation,
         )
 
     def _build_workbench(self, context: InvestigationContext) -> QueryWorkbench:
@@ -177,29 +188,14 @@ class SmartTableAnalyzer:
             table_metadata=context.metadata,
         )
 
-    def _count_unvalidated(self, investigation_id: int) -> int:
-        validator = ClaimValidator(self.db)
-        return sum(
-            1
-            for finding in self.db.list_findings(investigation_id)
-            if not validator.validate(investigation_id, finding).valid
-        )
 
-    def _write_report(
-        self,
-        investigation_id: int,
-        output_dir: Path | str | None,
-        output_path: Path | str | None,
-    ) -> Path | None:
-        """Stage 3 — render validated findings. Never blocks the investigation."""
-        if output_dir is None and output_path is None:
-            return None
-        try:
-            report = ReportAssembler(self.db).assemble(investigation_id)
-            return ReportWriter(output_dir or Path("reports")).write(report, output_path)
-        except Exception:
-            logger.exception(
-                "Report generation failed; findings remain in the database",
-                extra={"investigation_id": investigation_id},
-            )
-            return None
+def _timeline_status(stage: str) -> str:
+    if stage == "finding":
+        return "confirmed"
+    if stage in {"profiling_columns", "investigating", "collecting_metadata"}:
+        return "pending"
+    if stage == "error":
+        return "failed"
+    if stage in {"profile_complete", "report_complete"}:
+        return "completed"
+    return "info"

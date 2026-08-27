@@ -71,6 +71,8 @@ class InvestigationState(TypedDict):
     status: str
     current_question: NotRequired[str | None]
     current_check_type: NotRequired[str | None]
+    current_template_id: NotRequired[str | None]
+    cached_check_result: NotRequired[QueryResultState | None]
     current_query: NotRequired[str | None]
     query_result: NotRequired[QueryResultState | None]
     execution_status: NotRequired[str]

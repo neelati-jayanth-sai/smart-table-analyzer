@@ -95,10 +95,13 @@ def _proof(findings: list[dict[str, Any]], checks: list[dict[str, Any]]) -> None
         status = "Verified" if is_verified_finding(finding) else "Evidence unavailable / needs review"
         st.markdown(f"**Check {finding.get('check_num', '?')}: {_title(finding.get('question') or finding.get('check_type'))}** · {status}")
         st.write(f"**Question:** {finding.get('question') or 'What did this check measure?'}")
-        st.write(f"**Measured result:** {finding.get('exact_result') or finding.get('rationale') or 'Not recorded.'}")
+        if is_verified_finding(finding):
+            st.write(f"**Measured result:** {finding.get('exact_result') or 'Not recorded.'}")
+        else:
+            st.write(f"**Measurement status:** {finding.get('rationale') or 'The check could not be verified.'}")
         refs = finding.get("evidence_ids") or []
         st.caption(f"Evidence references: {', '.join(map(str, refs)) or 'none recorded'}")
-    for entry in checks:
+    for entry in _canonical_trail(checks):
         query = entry.get("rewritten_query") or entry.get("query_text")
         if query:
             state = str(entry.get("execution_status") or "unknown").replace("_", " ")
@@ -106,6 +109,20 @@ def _proof(findings: list[dict[str, Any]], checks: list[dict[str, Any]]) -> None
             if entry.get("error"):
                 st.error(str(entry["error"]))
             st.code(query, language="sql")
+
+
+def _canonical_trail(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return one authoritative execution per check, preferring success."""
+    selected: dict[Any, dict[str, Any]] = {}
+    for entry in checks:
+        key = entry.get("check_num")
+        current = selected.get(key)
+        if current is None or (
+            entry.get("execution_status") == "success"
+            and current.get("execution_status") != "success"
+        ):
+            selected[key] = entry
+    return [selected[key] for key in sorted(selected, key=lambda value: str(value))]
 
 
 def _setup(metadata: dict[str, Any]) -> None:

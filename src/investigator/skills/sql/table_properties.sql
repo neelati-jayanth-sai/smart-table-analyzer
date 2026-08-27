@@ -1,0 +1,1 @@
+SHOW TBLPROPERTIES {table_name}

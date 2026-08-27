@@ -16,7 +16,6 @@ from src.connectors.llm_adapter import LLMAdapter
 
 # Stable markers from src/investigator/prompt_templates/*.txt
 _DECIDE = "Decide the single most valuable NEXT question"
-_QUERY = "read-only Spark SQL"
 _ANALYSIS = "You are analysing the result"
 _CRITIC = "reviewing another engineer's draft"
 
@@ -26,44 +25,11 @@ _QUERY_RESULT = re.compile(r"QUERY RESULT:\n(.*?)\n\nReference knowledge:", re.D
 _DRAFT = re.compile(r"DRAFT FINDING:\n(\{.*?\n\})", re.DOTALL)
 _PLANNED = re.compile(r'"verdict": "planned"')
 
-DEFAULT_SQL = {
-    "file_size": (
-        "SELECT COUNT(*) AS file_count, MIN(file_size_in_bytes) AS min_bytes,"
-        " MAX(file_size_in_bytes) AS max_bytes, AVG(file_size_in_bytes) AS avg_bytes"
-        " FROM {table}.files WHERE content = 0"
-    ),
-    "skew": (
-        "SELECT MAX(record_count) AS max_rows, MIN(record_count) AS min_rows,"
-        " AVG(record_count) AS avg_rows, COUNT(*) AS partition_count"
-        " FROM {table}.partitions"
-    ),
-    "sort": (
-        "SELECT COUNT(DISTINCT sort_order_id) AS sort_orders, COUNT(*) AS file_count"
-        " FROM {table}.files WHERE content = 0"
-    ),
-    "delete_overhead": (
-        "SELECT COUNT(*) AS delete_files, SUM(file_size_in_bytes) AS delete_bytes"
-        " FROM {table}.files WHERE content != 0"
-    ),
-    "snapshot_retention": (
-        "SELECT COUNT(*) AS snapshot_count FROM {table}.snapshots"
-    ),
-}
-
-_FALLBACK_SQL = (
-    "SELECT COUNT(*) AS file_count, AVG(file_size_in_bytes) AS avg_bytes"
-    " FROM {table}.files WHERE content = 0"
-)
-
-
 class ScriptedLLM(LLMAdapter):
     """Deterministic stand-in for the Investigator's LLM.
 
-    plan            : [(check_type, question), ...] the planner hands out in
-                      order; empty means the planner gets nothing and must fall
-                      back to signal-derived hypotheses.
-    sql             : {check_type: sql} overriding DEFAULT_SQL; `{table}` is
-                      substituted. Use it to inject SQL a hook should block.
+    plan            : [(check_type, question), ...] the Investigator selects in
+                      order; empty falls back to measured evidence.
     analysis        : callable(check_type, check_num, result) -> dict of
                       overrides merged into the analysis answer.
     critic_approves : whether the Critic approves the draft.
@@ -76,14 +42,12 @@ class ScriptedLLM(LLMAdapter):
         *,
         table: str = "",
         plan: list[tuple[str, str]] | None = None,
-        sql: dict[str, str] | None = None,
         analysis: Callable[[str, int, dict], dict] | None = None,
         critic_approves: bool = True,
         fail_on: str | None = None,
     ):
         self.table = table
         self.plan = list(plan or [])
-        self.sql = {**DEFAULT_SQL, **(sql or {})}
         self.analysis = analysis
         self.critic_approves = critic_approves
         self.fail_on = fail_on
@@ -107,8 +71,6 @@ class ScriptedLLM(LLMAdapter):
     def _kind(prompt: str) -> str:
         if _DECIDE in prompt:
             return "decide"
-        if _QUERY in prompt:
-            return "query"
         if _ANALYSIS in prompt:
             return "analysis"
         if _CRITIC in prompt:
@@ -130,12 +92,6 @@ class ScriptedLLM(LLMAdapter):
             "question": question,
             "hypothesis": f"The signals suggest {check_type} is worth testing",
         })}
-
-    def _query(self, prompt: str) -> dict[str, Any]:
-        match = _CHECK_TYPE.search(prompt)
-        check_type = match.group(1) if match else "general"
-        template = self.sql.get(check_type, _FALLBACK_SQL)
-        return {"content": json.dumps({"sql": template.format(table=self.table)})}
 
     def _analysis(self, prompt: str) -> dict[str, Any]:
         check_num = int(_TRAIL_ID.search(prompt).group(1))

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from src.context import MAX_PROMPT_TOKENS, PromptContext
-from src.utils.errors import get_error_guidance
+from src.investigator.skills import registered_check_ids
 from src.utils.tokens import get_token_counter
 
 _token_counter = get_token_counter()
@@ -76,6 +76,7 @@ def build_decide_prompt(prompt_context: PromptContext, state: dict[str, Any] | N
         empty_note=empty_note,
         column_analysis=json.dumps(prompt_context.column_analysis, default=str),
         query_patterns=json.dumps(prompt_context.query_patterns, default=str),
+        registered_checks=json.dumps(registered_check_ids()),
     )
     _check_prompt_budget(prompt, "decide_prompt", state)
     return prompt
@@ -88,40 +89,6 @@ def build_knowledge_prompt(prompt_context: PromptContext, state: dict[str, Any] 
         check_type=prompt_context.current_check_type or 'general'
     )
     _check_prompt_budget(prompt, "knowledge_prompt", state)
-    return prompt
-
-
-def build_query_prompt(prompt_context: PromptContext, state: dict[str, Any] | None = None) -> str:
-    partition = prompt_context.partition_info
-    partition_note = ""
-    if not partition.get("partition_queryable"):
-        partition_note = (
-            "\nNOTE: This table does not expose a 'partition' column in its .partitions metadata. "
-            "Do NOT try to SELECT or GROUP BY a 'partition' column. Use only the columns listed above.\n"
-        )
-    previous_error = prompt_context.previous_error
-    error_guidance = ""
-    if previous_error:
-        specific_guidance = get_error_guidance(previous_error)
-        error_guidance = f"\nERROR: {previous_error}\n{specific_guidance}\n"
-    
-    template = _load_prompt_template("query_prompt.txt")
-    prompt = template.format(
-        question=prompt_context.current_question,
-        check_type=prompt_context.current_check_type or 'general',
-        table_name=prompt_context.table_name,
-        partition_info=json.dumps(partition),
-        metadata_text=prompt_context.metadata_text,
-        partition_note=partition_note,
-        error_guidance=error_guidance,
-        table_properties=json.dumps(prompt_context.table_properties),
-        column_analysis=json.dumps(prompt_context.column_analysis),
-        partition_analysis=json.dumps(prompt_context.partition_analysis),
-        query_patterns=json.dumps(prompt_context.query_patterns),
-        knowledge_text=prompt_context.knowledge_text,
-        previous_error=prompt_context.previous_error
-    )
-    _check_prompt_budget(prompt, "query_prompt", state)
     return prompt
 
 
@@ -160,6 +127,7 @@ def build_critic_prompt(prompt_context: PromptContext, draft_finding: dict[str, 
         query_result=json.dumps(prompt_context.query_result_summary, default=str),
         knowledge_text=prompt_context.knowledge_text,
         table_name=prompt_context.table_name,
+        check_num=prompt_context.check_count,
     )
     _check_prompt_budget(prompt, "critic_prompt", state)
     return prompt

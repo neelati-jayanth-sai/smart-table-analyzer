@@ -36,7 +36,7 @@ python scripts/run_investigation.py --table eds_it_dev.elh_comn.your_table
 - **[Architecture](Architecture.md)** - System architecture and design decisions
 - **[AGENTS.md](AGENTS.md)** - Coding standards and development guidelines
 - **[CONTEXT.md](CONTEXT.md)** - Domain context and terminology
-- **[Running investigations](docs/RUNNING_INVESTIGATIONS.md)** - Fast/Deep workflow and report interpretation
+- **[Running investigations](docs/RUNNING_INVESTIGATIONS.md)** - Full Deep + Thorough workflow and report interpretation
 - **[Enterprise Network Setup](docs/ENTERPRISE_NETWORK_SETUP.md)** - Network connectivity and service configuration
 
 ## Key Features

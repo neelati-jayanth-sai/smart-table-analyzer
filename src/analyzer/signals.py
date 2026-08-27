@@ -3,11 +3,10 @@
 A signal states what was measured and how far it sits from the standard. It
 never states what to do about it — that judgement belongs to the Investigator.
 """
-
 from __future__ import annotations
-
+import os
 from typing import Any
-
+from src.utils import human_bytes
 TARGET_FILE_BYTES = 134_217_728  # 128 MB
 _SMALL_FILE_RATIO = 0.5          # avg below half the target is "small files"
 _LARGE_FILE_RATIO = 2.0
@@ -16,6 +15,12 @@ _SKEW_MEDIUM = 5.0
 _MANIFEST_FILE_WARN = 10_000
 _SNAPSHOT_WARN = 100
 _DELETE_OVERHEAD_WARN = 0.10
+def target_file_bytes() -> int:
+    """Return the production target, or an explicit local-fixture scale."""
+    try:
+        return max(1, int(os.getenv("STA_TARGET_FILE_BYTES", str(TARGET_FILE_BYTES))))
+    except ValueError:
+        return TARGET_FILE_BYTES
 
 
 def _signal(name: str, severity: str, detail: str, **metrics: Any) -> dict[str, Any]:
@@ -50,42 +55,45 @@ def detect_signals(
             )
         )
 
+    target = target_file_bytes()
     num_files = max(int(raw.get("num_data_files", 0)), 1)
     total_bytes = int(raw.get("total_data_file_bytes", 0))
     avg_bytes = total_bytes / num_files if total_bytes else 0
 
-    if data_file_stats_available and avg_bytes and avg_bytes < TARGET_FILE_BYTES * _SMALL_FILE_RATIO:
-        severity = "HIGH" if avg_bytes < TARGET_FILE_BYTES * 0.1 else "MEDIUM"
+    if data_file_stats_available and avg_bytes and avg_bytes < target * _SMALL_FILE_RATIO:
+        severity = "HIGH" if avg_bytes < target * 0.1 else "MEDIUM"
         signals.append(
             _signal(
                 "small_files",
                 severity,
-                f"Average data file is {avg_bytes / 1e6:.1f} MB against a "
-                f"{TARGET_FILE_BYTES / 1e6:.0f} MB target",
+                f"Average data file is {human_bytes(avg_bytes)} against a "
+                f"{human_bytes(target)} target",
                 avg_file_bytes=int(avg_bytes),
                 num_data_files=num_files,
+                target_file_bytes=target,
             )
         )
-    elif data_file_stats_available and avg_bytes > TARGET_FILE_BYTES * _LARGE_FILE_RATIO:
+    elif data_file_stats_available and avg_bytes > target * _LARGE_FILE_RATIO:
         signals.append(
             _signal(
                 "large_files",
                 "MEDIUM",
-                f"Average data file is {avg_bytes / 1e6:.1f} MB, over twice the target",
+                f"Average data file is {human_bytes(avg_bytes)}, over twice the target",
                 avg_file_bytes=int(avg_bytes),
+                target_file_bytes=target,
             )
         )
 
     storage = raw.get("partition_storage") or {}
     avg_partition_bytes = float(storage.get("avg_partition_bytes") or 0)
-    if partition_stats_available and avg_partition_bytes and avg_partition_bytes < TARGET_FILE_BYTES:
-        severity = "HIGH" if avg_partition_bytes < TARGET_FILE_BYTES * 0.1 else "MEDIUM"
+    if partition_stats_available and avg_partition_bytes and avg_partition_bytes < target:
+        severity = "HIGH" if avg_partition_bytes < target * 0.1 else "MEDIUM"
         signals.append(
             _signal(
                 "undersized_partitions",
                 severity,
-                f"Average partition contains {avg_partition_bytes / 1e6:.1f} MB against a "
-                f"{TARGET_FILE_BYTES / 1e6:.0f} MB target file",
+                f"Average partition contains {human_bytes(avg_partition_bytes)} against a "
+                f"{human_bytes(target)} target file",
                 avg_partition_bytes=int(avg_partition_bytes),
                 partition_count=int(raw.get("partition_count", 0)),
                 avg_files_per_partition=float(storage.get("avg_files_per_partition") or 0),

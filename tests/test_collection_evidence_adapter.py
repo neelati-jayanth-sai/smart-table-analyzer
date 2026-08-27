@@ -82,7 +82,13 @@ def test_pipeline_persists_collection_evidence_before_running_investigation(tmp_
     outcome = analyzer.analyze(table.name, "cat", "sch")
 
     records = db.list_evidence(outcome.investigation_id)
-    assert len(records) == 5
-    assert [record.module_name for record in records] == [
+    # Core collection writes five records before the agent starts. Full Deep
+    # profiling then appends a completed column-profile revision, preserving
+    # the initial pending/unknown state for auditability.
+    assert len(records) == 6
+    assert [record.module_name for record in records[:5]] == [
         "identity_schema", "iceberg_layout", "table_properties", "column_profile", "workload"
     ]
+    assert records[3].availability.state is AvailabilityState.SKIPPED
+    assert records[5].module_name == "column_profile"
+    assert records[5].availability.state is AvailabilityState.COMPLETED

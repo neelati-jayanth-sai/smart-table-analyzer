@@ -20,31 +20,6 @@ class ResponseValidator:
     """Validate LLM responses and provide specific error messages."""
 
     @staticmethod
-    def validate_query_response(content: str) -> tuple[bool, Optional[str], Optional[str]]:
-        """Validate that response contains valid SQL query.
-        
-        Returns:
-            (is_valid, error_message, extracted_sql)
-        """
-        if not content or not content.strip():
-            return False, "Empty response", None
-        
-        # Try to parse as JSON first (tolerating markdown fences)
-        parsed = parse_json_response(content)
-        if isinstance(parsed, dict):
-            sql = str(parsed.get("sql", "")).strip()
-            if sql:
-                return True, None, sql
-            return False, "JSON missing 'sql' field", None
-
-        # If not JSON, treat as plain SQL
-        sql = _strip_fences(content)
-        if sql:
-            return True, None, sql
-
-        return False, "No valid SQL found", None
-    
-    @staticmethod
     def validate_analysis_response(content: str) -> tuple[bool, Optional[str], Optional[dict]]:
         """Validate that response contains valid analysis JSON.
         

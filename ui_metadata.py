@@ -141,12 +141,13 @@ def get_status_color(status: str) -> str:
 
 def high_signal_check_types(signals: list[dict]) -> set[str]:
     """Map persisted high-severity signals to the checks they qualify."""
-    from src.investigator.planner import SIGNAL_HYPOTHESES
+    from src.investigator.skills.candidates import SIGNAL_CHECKS
 
     return {
-        SIGNAL_HYPOTHESES[signal["name"]][0]
+        SIGNAL_CHECKS[signal["name"]][0]
         for signal in signals
-        if signal.get("name") in SIGNAL_HYPOTHESES
+        if signal.get("name") in SIGNAL_CHECKS
+        and signal.get("severity") == "HIGH"
     }
 
 

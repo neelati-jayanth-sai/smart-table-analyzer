@@ -37,6 +37,9 @@ class CriticReview:
         if not is_valid:
             logger.warning("Critic returned invalid JSON, falling back to draft. Error: %s", error_msg)
             return state
+        if not parsed.get("approved", True):
+            logger.warning("Critic rejected draft; retaining analyst evidence for review")
+            return state
 
         actionable_sql = approve_actionable_sql(
             sanitize_actionable_sql(

@@ -5,7 +5,8 @@ mock-Investigator test suite plus modular refactor (phase 2).
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
-**Overall: all items complete.** Test suite: 0 tests collectable → **194 passing**.
+**Historical tracker:** current implementation status and verification results are maintained in
+`IMPLEMENTATION_PROGRESS.md`.
 
 ---
 
@@ -45,8 +46,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
   - [x] `test_different_tables_get_different_plans` asserts the first hypothesis is
         distinct for every problem scenario
   - [x] Severity ordering: HIGH before MEDIUM before LOW
-  - [x] LLM plan honoured when available; planner outage degrades to signal-derived
-        hypotheses rather than failing
+  - [x] Investigator selection honoured when available; selection outage degrades to
+        signal-derived deterministic checks rather than failing
 - [x] **1.7** Every finding carries confidence, rationale, and evidence
   - [x] Asserted for every scenario: evidence IDs non-empty, resolve through
         `ClaimValidator`, confidence in [0, 1], rationale ≥ 20 chars
@@ -77,7 +78,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 |---|---|
 | `src/analyzer/` | `metrics.py` (collection) · `signals.py` (measurement vs standard) · `legacy_analyzer.py` · `pipeline.py` (entrypoint) |
 | `src/context/` | `investigation_context.py` · `summarizers.py` · `engine.py` · `helpers.py` |
-| `src/investigator/planner/` | `hypotheses.py` (signal→hypothesis data) · `planner.py` (ranking + fallbacks) |
+| `src/investigator/skills/` | Registered deterministic checks, templates, rendering, and execution seam |
 | `src/investigator/loop/` | `chain.py` (one hypothesis to conclusion) · `runner.py` (fan-out) |
 | `src/investigator/executors/` | `nodes.py` · `query.py` · `execution.py` · `analysis.py` · `compaction.py` · `analyst_tools.py` |
 | `src/investigator/critic/` | `critic.py` · `quality_gate.py` · `sanitizers.py` |
@@ -115,7 +116,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 `investigator.state` → `models.state` · `investigator.metadata_loader` →
 `metadata.loader` · `investigator.context_manager` → `context.summarizers` +
 `context.investigation_context` · `investigator.context_engine` → `context.engine` ·
-`investigator.check_planner` → `investigator.planner` · `investigator.parallel_runner` →
+`investigator.check_planner` → `investigator.selection` + `investigator.skills` · `investigator.parallel_runner` →
 `investigator.loop` · `investigator.graph_nodes` / `graph_node_executors` →
 `investigator.executors` · `investigator.finding_quality` → `investigator.critic` ·
 `investigator.token_counter` / `response_parser` / `error_guidance` → `utils.*` ·
@@ -137,7 +138,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 - [x] Full suite green after every phase (A→D), fixed before moving on
 - [x] Final: **194 passed**
-- [x] Script smoke tests: `scripts/test_graph_flow.py`, `scripts/test_budget.py` pass
+- [x] Script smoke tests: `scripts/test_budget.py` and the local Iceberg E2E runner pass
 - [x] Import sweep: every module under `src/` imports cleanly (0 failures)
 - [x] Byte-compile: all of `scripts/`, `app.py`, `ui_*.py`
 - [x] Public-API check across 18 packages: 0 failures
@@ -246,7 +247,7 @@ whole finding.
   session if you want any of them restored.
 - **Not verifiable in this environment:** anything needing a live IOMETE Spark Connect
   session or Dell AIA Gateway credentials — `scripts/test_end_to_end.py`,
-  `scripts/test_graph_flow_real.py`, and `DellAIAAdapter` against the real gateway. The
+  the local E2E runner and `OllamaCloudAdapter` against the configured gateway. The
   adapter's HTTP contract was reconstructed from `scripts/test_llm_oauth.py` and should be
   smoke-tested against the gateway before release. Everything else runs on the mock harness.
 - `requirements.txt`: `langgraph` and `langchain-core` removed (no runtime path imports

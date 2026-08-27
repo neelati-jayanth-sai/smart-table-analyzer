@@ -14,6 +14,14 @@ class QueryExecution:
     @_logged
     def execute_with_workbench(self, state: InvestigationState) -> InvestigationState:
         validate_state(state)
+        cached = state.get("cached_check_result")
+        if cached is not None:
+            template_id = state.get("current_template_id") or "baseline"
+            self.db.record_query(
+                state["investigation_id"], state["check_count"], f"execute_skill:{template_id}",
+                f"BASELINE_CACHE:{template_id}", None, cached, "success", 0, None,
+            )
+            return validate_state({**state, "query_result": cached, "execution_status": "success"})
         query = state.get("current_query")
         if not query:
             new_state = {**state, "execution_status": "error",
@@ -28,8 +36,9 @@ class QueryExecution:
                 result.hook_result.hook_name, result.hook_result.error_message,
             )
         qrs = QueryResultState(**{k: getattr(result, k) for k in QueryResultState.__annotations__})
+        template_id = state.get("current_template_id") or "unknown"
         self.db.record_query(
-            state["investigation_id"], state["check_count"], "execute_query",
+            state["investigation_id"], state["check_count"], f"execute_skill:{template_id}",
             result.query, result.rewritten_query, qrs, status,
             result.execution_time_ms, result.error,
         )

@@ -10,6 +10,8 @@ httpx>=0.25.0
 
 # For real Iceberg table integration
 pyiceberg>=0.6.0
+pyarrow>=14.0.0
+duckdb>=1.0.0
 
 # For IOMETE connection (align with cluster Spark version)
 pyspark>=3.5.0,<3.6.0

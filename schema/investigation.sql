@@ -195,3 +195,21 @@ CREATE TABLE IF NOT EXISTS investigation_final_reviews (
 
 CREATE INDEX IF NOT EXISTS idx_final_reviews_investigation
     ON investigation_final_reviews(investigation_id);
+
+-- Append-only human-readable investigation journal.
+CREATE TABLE IF NOT EXISTS timeline_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    investigation_id INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN (
+        'confirmed', 'provisional', 'pending', 'completed', 'failed', 'info')),
+    evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+    confidence REAL,
+    details_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (investigation_id) REFERENCES investigations(investigation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_timeline_events_investigation
+    ON timeline_events(investigation_id, event_id);

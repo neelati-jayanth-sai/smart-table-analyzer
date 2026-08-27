@@ -79,6 +79,7 @@ class Investigator:
         baseline_score: dict[str, Any] | None = None,
         table_metadata: dict[str, Any] | None = None,
         context: InvestigationContext | None = None,
+        reconciliation: bool = False,
     ) -> InvestigationResult:
         """Run the adaptive investigation loop over an already-collected context.
 
@@ -110,32 +111,38 @@ class Investigator:
             status="running",
         )
 
-        from .planner import plan_checks
+        from .selection import select_next_check
 
         self.db.set_status(investigation_id, "metadata_collected")
-
         self.db.set_status(investigation_id, "planning")
-        try:
-            check_specs = plan_checks(initial_state, max_checks, self.nodes)
-        except Exception as exc:
-            logger.exception("Hypothesis planning failed", extra={"investigation_id": investigation_id})
-            self.db.complete_investigation(investigation_id, "failed")
-            raise InvestigationError(
-                f"Investigation {investigation_id} could not plan any check: {exc}"
-            ) from exc
-
-        if not check_specs:
-            self.db.complete_investigation(investigation_id, "failed")
-            raise InvestigationError(
-                f"Investigation {investigation_id} produced no hypothesis to test"
-            )
-
         self.db.set_status(investigation_id, "checks_running")
         from .loop import run_checks_parallel
-
-        findings = run_checks_parallel(
-            self.nodes, initial_state, check_specs, max_workers=self.max_workers
-        )
+        findings: list[dict[str, Any]] = []
+        used: set[str] = set(context.completed_checks)
+        selected_indices: list[int] = []
+        start_index = len(context.findings)
+        for index in range(start_index, start_index + max_checks):
+            state = {**initial_state, "findings": findings, "check_count": index}
+            choice = select_next_check(self.nodes, state, used, fallback=not reconciliation)
+            if choice is None:
+                break
+            check_type, question = choice
+            used.add(check_type)
+            selected_indices.append(index)
+            findings.extend(run_checks_parallel(
+                self.nodes, state, [(index, check_type, question)], max_workers=1
+            ))
+        if not selected_indices:
+            if start_index:
+                stored = self.db.get_investigation(investigation_id)
+                return InvestigationResult(
+                    investigation_id=investigation_id,
+                    status=stored.status if stored else "completed",
+                    checks_completed=0,
+                    findings=[], checks=self.db.list_trail(investigation_id),
+                )
+            self.db.complete_investigation(investigation_id, "failed")
+            raise InvestigationError(f"Investigation {investigation_id} selected no registered checks")
         for finding in findings:
             context.record_finding(dict(finding))
 
@@ -144,7 +151,7 @@ class Investigator:
         check_count = len(findings)
         # Nominal 6 nodes per completed check, matching StepBudget's model.
         step_count = check_count * 6
-        planned_indices = {idx for idx, _, _ in check_specs}
+        planned_indices = set(selected_indices)
         produced_indices = {f.get("check_num") for f in findings}
         status = _final_status(
             findings=findings,
@@ -157,7 +164,7 @@ class Investigator:
         final_state = {
             **initial_state,
             "findings": findings,
-            "check_count": check_count,
+            "check_count": start_index + check_count,
             "step_count": step_count,
             "status": status,
         }
@@ -168,14 +175,14 @@ class Investigator:
 
         logger.info(
             "Investigation finished status=%s checks=%d findings=%d",
-            status, len(check_specs), len(findings),
+            status, len(selected_indices), len(findings),
             extra={"investigation_id": investigation_id},
         )
 
         return InvestigationResult(
             investigation_id=investigation_id,
             status=status,
-            checks_completed=len(check_specs),
+            checks_completed=len(selected_indices),
             findings=[dict(f) for f in findings],
             checks=self.db.list_trail(investigation_id),
         )

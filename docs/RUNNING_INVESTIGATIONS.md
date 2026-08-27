@@ -1,7 +1,7 @@
 # Running investigations
 
-This guide covers the current Fast/Deep investigation workflow. It applies to
-any Apache Iceberg table; a table DDL is not required as input.
+This guide covers the mandatory full investigation workflow for an Apache
+Iceberg table; a table DDL is not required as input.
 
 ## Prerequisites
 
@@ -18,33 +18,21 @@ for the environment variables. Install the runtime dependencies:
 python -m pip install -r requirements.txt
 ```
 
-## Choose an analysis depth
+## Investigation contract
 
-| Mode | Deterministic collection contract | Use when |
-|---|---|---|
-| `fast` | Iceberg metadata, layout, properties, and available workload metadata. It does not read base-table rows for column profiling. | You need a quick layout/configuration assessment. |
-| `deep` | Everything in Fast, plus exact aggregate null counts and cardinalities for every primitive column, in bounded batches. Numeric and temporal columns also have min/max ranges. | You need evidence for schema/data-quality or partition-candidate reasoning. |
-
-Deep is intentionally more expensive because it scans table data. It does not
-invent distribution statistics, and non-primitive, empty-table, failed, and
-skipped columns remain explicit in the evidence.
-
-`--max-checks` limits initial LLM hypotheses after deterministic collection. It
-does not reduce the Deep column-profile contract and can lead to follow-up
-checks when the evidence warrants them.
+Every run collects Iceberg metadata, profiles every primitive column with exact
+aggregate batches, and starts ten initial LLM hypotheses. Core evidence starts
+the investigation immediately while the required full profile continues beside
+it. The UI shows evidence-backed findings and profile progress until both work
+streams finish. Non-primitive, empty-table, failed, and skipped columns remain
+explicit in the evidence.
 
 ## Run from the CLI
 
-Run Fast explicitly:
+Run the full investigation:
 
 ```bash
-python scripts/run_investigation.py --table catalog.schema.table --metadata-profile fast
-```
-
-Run Deep with a bounded initial investigation plan:
-
-```bash
-python scripts/run_investigation.py --table catalog.schema.table --metadata-profile deep --max-checks 5
+python scripts/run_investigation.py --table catalog.schema.table
 ```
 
 Useful optional inputs are `--snapshot <id>` to pin an Iceberg snapshot,
@@ -59,10 +47,9 @@ reports/my-run.md` for a specific report path. The standard report path is
 streamlit run app.py
 ```
 
-Enter a fully qualified `catalog.schema.table`, select Fast or Deep, optionally
-provide a snapshot or query-metrics table, set the maximum planned checks, and
-start the analysis. The dashboard and CLI use the same pipeline. The dashboard
-reuses its Spark Connect session and reads prior runs from
+Enter a fully qualified `catalog.schema.table`, optionally provide a snapshot
+or query-metrics table, and start the analysis. The dashboard and CLI use the
+same full-investigation pipeline. The dashboard reuses its Spark Connect session and reads prior runs from
 `data/investigation.db`.
 
 ## Read the result safely
@@ -77,7 +64,7 @@ to see what was actually collected:
 
 - `completed` — the collection Module recorded deterministic evidence.
 - `skipped` / **Not assessed** — the Module was deliberately outside the run
-  contract, such as column profiling in Fast.
+  contract or is waiting for its staged full-profile evidence.
 - `unavailable` — source metadata was not available.
 - `failed` — collection attempted the Module but could not complete it. A Deep
   run with a failed required Module is assessed as `needs_review`.

@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.analyzer.legacy_analyzer import LegacyAnalyzer
 from src.analyzer.pipeline import SmartTableAnalyzer
 from src.database import InvestigationDb, KnowledgeStore
-from src.investigator.planner import plan_checks
+from src.investigator.skills.candidates import candidates
 from src.reporting import ReportAssembler
 from src.reporting import render_markdown
 from src.validation import ClaimValidator
@@ -138,8 +138,8 @@ class TestSignalDetection:
 # ----------------------------------------------------------------- planning
 
 
-class TestAdaptivePlanning:
-    """The plan must follow the table's signals, not a fixed checklist."""
+class TestAdaptiveSelection:
+    """The Investigator selects checks from evidence, not a fixed checklist."""
 
     @pytest.mark.parametrize(
         "scenario,expected_check",
@@ -154,9 +154,9 @@ class TestAdaptivePlanning:
     )
     def test_signal_drives_the_first_hypothesis(self, scenario, expected_check):
         _, context = context_for(scenario)
-        specs = plan_checks(context.to_state(1, max_checks=4), 4, nodes=None)
-        assert specs[0][1] == expected_check, (
-            f"{scenario}: first hypothesis was {specs[0][1]}, expected {expected_check}"
+        choices = candidates(context.signals, set())
+        assert choices[0][0] == expected_check, (
+            f"{scenario}: first selection was {choices[0][0]}, expected {expected_check}"
         )
 
     def test_different_tables_get_different_plans(self):
@@ -164,8 +164,7 @@ class TestAdaptivePlanning:
         plans = {}
         for scenario in PROBLEM_SCENARIOS:
             _, context = context_for(scenario)
-            specs = plan_checks(context.to_state(1, max_checks=3), 3, nodes=None)
-            plans[scenario] = [check_type for _, check_type, _ in specs]
+            plans[scenario] = [check_type for check_type, _ in candidates(context.signals, set())[:3]]
 
         firsts = [plan[0] for plan in plans.values()]
         assert len(set(firsts)) == len(firsts), f"plans did not differentiate: {plans}"
@@ -173,9 +172,8 @@ class TestAdaptivePlanning:
     def test_healthy_table_falls_back_to_coverage(self):
         """With nothing suspicious, the plan is generic coverage, not silence."""
         _, context = context_for("healthy")
-        specs = plan_checks(context.to_state(1, max_checks=3), 3, nodes=None)
-        assert len(specs) == 3
-        assert [ct for _, ct, _ in specs] == ["table_properties", "file_size", "skew"]
+        choices = candidates(context.signals, set())
+        assert [ct for ct, _ in choices] == ["table_properties", "file_size", "skew"]
 
     def test_higher_severity_is_investigated_first(self):
         signals = [
@@ -183,32 +181,31 @@ class TestAdaptivePlanning:
             {"name": "partition_skew", "severity": "HIGH", "detail": "", "metrics": {}},
             {"name": "delete_overhead", "severity": "MEDIUM", "detail": "", "metrics": {}},
         ]
-        state = {"signals": signals, "table_name": "t", "investigation_id": 1}
-        order = [ct for _, ct, _ in plan_checks(state, 3, nodes=None)]
+        order = [ct for ct, _ in candidates(signals, set())[:3]]
         assert order == ["skew", "delete_overhead", "snapshot_retention"]
 
-    def test_llm_plan_is_used_when_available(self, tmp_path):
+    def test_llm_plan_cannot_escape_evidence_backed_candidates(self, tmp_path):
         llm = ScriptedLLM(plan=[("scan_efficiency", "Why do queries read the whole table?")])
         _, _, _, _, analyzer = build("partition_skew", tmp_path, llm=llm, max_checks=2)
         outcome = analyzer.analyze(SCENARIOS["partition_skew"]().name, "cat", "sch")
-        questions = [f.question for f in outcome.result.findings and
-                     analyzer.db.list_findings(outcome.investigation_id)]
-        assert "Why do queries read the whole table?" in questions
+        questions = [finding.question for finding in analyzer.db.list_findings(outcome.investigation_id)]
+        assert "Why do queries read the whole table?" not in questions
+        assert questions[0] == "Do partitions have material row-count skew?"
 
     def test_planning_survives_an_llm_outage(self, tmp_path):
-        """A planner outage must degrade to signal-derived hypotheses, not fail."""
+        """An Investigator selection outage must degrade to measured evidence."""
         llm = ScriptedLLM(fail_on="Decide the single most valuable NEXT question")
         table, _, _, db, analyzer = build("partition_skew", tmp_path, llm=llm, max_checks=2)
         outcome = analyzer.analyze(table.name, "cat", "sch")
         findings = db.list_findings(outcome.investigation_id)
-        assert findings, "investigation must still run when the planner LLM is down"
+        assert findings, "investigation must still run when selection LLM is down"
         assert findings[0].check_type == "skew"
 
-    def test_planner_prompt_carries_the_measured_signals(self, tmp_path):
+    def test_selection_prompt_carries_the_measured_signals(self, tmp_path):
         table, _, llm, _, analyzer = build("small_files", tmp_path)
         analyzer.analyze(table.name, "cat", "sch")
         planning = llm.prompts("decide")
-        assert planning, "the planner must consult the LLM"
+        assert planning, "the Investigator must consult the LLM"
         assert "Measured signals" in planning[0]
         assert "small_files" in planning[0]
 
@@ -288,11 +285,14 @@ class TestInvestigationPerScenario:
         ], seen
         assert db.get_investigation(outcome.investigation_id).status in ("completed", "failed")
 
-    def test_metadata_is_read_once_per_investigation(self, tmp_path):
+    def test_core_metadata_is_read_once_and_full_profile_adds_one_scan(self, tmp_path):
         table, spark, _, _, analyzer = build("partition_skew", tmp_path, max_checks=3)
         analyzer.analyze(table.name, "cat", "sch")
-        assert spark.table_reads.count(table.name) == 1, (
-            f"fast profile reads the base schema only; got {spark.table_reads}"
+        # The core stage reads the table once for schema/identity. Mandatory
+        # Full Deep profiling performs one additional base-table scan while
+        # the agent investigates, so both reads are intentional.
+        assert spark.table_reads.count(table.name) == 2, (
+            f"core metadata plus full profile should read the base table twice; got {spark.table_reads}"
         )
         for suffix in ("files", "partitions", "snapshots", "history"):
             assert spark.table_reads.count(f"{table.name}.{suffix}") == 1
@@ -301,69 +301,32 @@ class TestInvestigationPerScenario:
 # --------------------------------------------------------------- resilience
 
 
-class TestHookFailures:
-    """A blocked query degrades one check; it never ends the investigation."""
+class TestDeterministicExecution:
+    """Hostile LLM SQL cannot enter the deterministic execution seam."""
 
-    def _run(self, tmp_path, bad_sql, scenario="partition_skew", max_checks=2):
-        table = SCENARIOS[scenario]()
-        llm = ScriptedLLM(table=table.name, sql={"skew": bad_sql.format(table=table.name)})
-        _, spark, _, db, analyzer = build(scenario, tmp_path, llm=llm, max_checks=max_checks)
-        outcome = analyzer.analyze(table.name, "cat", "sch", output_dir=tmp_path / "reports")
-        return db, outcome
-
-    def test_write_statement_is_blocked_and_recorded(self, tmp_path):
-        db, outcome = self._run(tmp_path, "DROP TABLE {table}")
-        violations = db.list_hook_violations(outcome.investigation_id)
-        assert violations, "a DROP must be blocked by the read-only hook"
-        assert violations[0]["hook_name"] == "ReadOnlyHook"
-
-    def test_query_outside_the_whitelisted_schema_is_blocked(self, tmp_path):
-        db, outcome = self._run(tmp_path, "SELECT COUNT(*) FROM other_cat.other_sch.secrets")
-        violations = db.list_hook_violations(outcome.investigation_id)
-        assert violations and violations[0]["hook_name"] == "SchemaWhitelistHook"
-
-    def test_hallucinated_column_is_blocked_by_schema_grounding(self, tmp_path):
-        db, outcome = self._run(
-            tmp_path, "SELECT SUM(bytes_written_total) FROM {table}.files"
-        )
-        violations = db.list_hook_violations(outcome.investigation_id)
-        assert violations and violations[0]["hook_name"] == "SqlGroundingHook"
-        assert "bytes_written_total" in violations[0]["reason"]
-
-    def test_investigation_continues_past_a_blocked_check(self, tmp_path):
-        db, outcome = self._run(tmp_path, "DROP TABLE {table}", max_checks=2)
-        findings = db.list_findings(outcome.investigation_id)
-        assert len(findings) >= 2, "the other planned check must still run"
-        statuses = {e["execution_status"] for e in db.list_trail(outcome.investigation_id)}
-        assert "hook_failed" in statuses and "success" in statuses
-
-    def test_report_warns_about_blocked_queries(self, tmp_path):
-        db, outcome = self._run(tmp_path, "DROP TABLE {table}")
-        report = ReportAssembler(db).assemble(outcome.investigation_id)
-        assert any("blocked by a safety hook" in w for w in report.warnings), report.warnings
-        assert "Blocked queries" in render_markdown(report)
-
-    def test_blocked_check_is_retried_before_giving_up(self, tmp_path):
-        db, outcome = self._run(tmp_path, "DROP TABLE {table}")
-        violations = db.list_hook_violations(outcome.investigation_id)
-        assert len(violations) >= 2, "a blocked query must be retried, not abandoned"
+    def test_unknown_planned_check_is_ignored(self, tmp_path):
+        table = SCENARIOS["partition_skew"]()
+        llm = ScriptedLLM(table=table.name, plan=[("freeform_sql", "DROP TABLE now?")])
+        _, _, _, db, analyzer = build("partition_skew", tmp_path, llm=llm, max_checks=1)
+        outcome = analyzer.analyze(table.name, "cat", "sch")
+        assert db.list_findings(outcome.investigation_id)[0].check_type == "skew"
 
 
 class TestSqlExecutionFailures:
     """Spark-side errors are evidence about the check, not a reason to stop."""
 
-    def test_failing_query_does_not_end_the_investigation(self, tmp_path):
+    def test_cached_baseline_avoids_duplicate_failing_query(self, tmp_path):
         table = SCENARIOS["partition_skew"]()
         spark = MockSpark(table, fail_on=r"AS partition_count")
         _, _, _, db, analyzer = build("partition_skew", tmp_path, spark=spark, max_checks=2)
         outcome = analyzer.analyze(table.name, "cat", "sch", output_dir=tmp_path / "reports")
 
-        assert db.list_findings(outcome.investigation_id), "other checks must still conclude"
+        assert db.list_findings(outcome.investigation_id), "the cached check must still conclude"
         trail = db.list_trail(outcome.investigation_id)
-        assert any(e["execution_status"] == "error" for e in trail)
-        assert any(e["error_message"] for e in trail)
+        assert {entry["execution_status"] for entry in trail} == {"success"}
+        assert all(entry["query_text"].startswith("BASELINE_CACHE:") for entry in trail)
 
-    def test_failure_is_retried_with_the_error_in_the_prompt(self, tmp_path):
+    def test_cached_baseline_needs_no_retry(self, tmp_path):
         table = SCENARIOS["partition_skew"]()
         spark = MockSpark(table, fail_on=r"AS partition_count")
         llm = ScriptedLLM(table=table.name)
@@ -372,17 +335,19 @@ class TestSqlExecutionFailures:
         )
         analyzer.analyze(table.name, "cat", "sch")
 
-        retry_prompts = [p for p in llm.prompts("query") if "ERROR:" in p]
-        assert retry_prompts, "a failed query must be retried with its error in the prompt"
-        assert "simulated Spark failure" in retry_prompts[0]
+        assert llm.prompts("query") == []
+        trail = db.list_trail(1)
+        assert len(trail) == 1
+        assert trail[0]["query_text"] == "BASELINE_CACHE:baseline:skew"
+        assert trail[0]["execution_status"] == "success"
 
-    def test_report_warns_about_failed_queries(self, tmp_path):
+    def test_cached_baseline_does_not_report_a_spurious_query_failure(self, tmp_path):
         table = SCENARIOS["partition_skew"]()
         spark = MockSpark(table, fail_on=r"AS partition_count")
         _, _, _, db, analyzer = build("partition_skew", tmp_path, spark=spark, max_checks=2)
         outcome = analyzer.analyze(table.name, "cat", "sch")
         report = ReportAssembler(db).assemble(outcome.investigation_id)
-        assert any("failed or timed out" in w for w in report.warnings), report.warnings
+        assert not any("failed or timed out" in warning for warning in report.warnings)
 
     def test_total_spark_outage_is_not_reported_as_an_empty_table(self, tmp_path):
         """An unreachable table must not be mistaken for a clean, empty one."""
@@ -471,26 +436,24 @@ class TestAdaptiveLoop:
         outcome = analyzer.analyze(table.name, "cat", "sch")
         assert len(db.list_findings(outcome.investigation_id)) == 1
 
-    def test_followup_question_reaches_the_query_prompt(self, tmp_path):
+    def test_followup_uses_the_same_registered_check(self, tmp_path):
         table = SCENARIOS["partition_skew"]()
         llm = ScriptedLLM(table=table.name, analysis=self._followup_once())
         _, _, _, _, analyzer = build("partition_skew", tmp_path, llm=llm, max_checks=1)
         analyzer.analyze(table.name, "cat", "sch")
-        assert any(
-            "Which partitions hold the excess bytes?" in p for p in llm.prompts("query")
-        ), "the follow-up must drive a new SQL generation"
+        assert llm.prompts("query") == []
 
 
 # ------------------------------------------------------------------ quality
 
 
 class TestCriticAndQuality:
-    def test_critic_rejection_is_retried(self, tmp_path):
+    def test_critic_rejection_does_not_repeat_unchanged_evidence(self, tmp_path):
         table = SCENARIOS["partition_skew"]()
         llm = ScriptedLLM(table=table.name, critic_approves=False)
         _, _, _, db, analyzer = build("partition_skew", tmp_path, llm=llm, max_checks=1)
         analyzer.analyze(table.name, "cat", "sch")
-        assert len(llm.prompts("critic")) >= 2, "a rejected draft must get another pass"
+        assert len(llm.prompts("critic")) == 1
 
     def test_finding_without_evidence_is_not_recorded_as_valid(self, tmp_path):
         table = SCENARIOS["partition_skew"]()

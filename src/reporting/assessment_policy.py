@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.investigator.planner import SIGNAL_HYPOTHESES
+from src.investigator.skills.candidates import SIGNAL_CHECKS
 from src.models import ASSESSMENT_VERSION, Assessment
 
 
@@ -69,9 +69,9 @@ def assess(
 def _review_checks(signals: list[dict[str, Any]]) -> list[str]:
     return sorted(
         {
-            SIGNAL_HYPOTHESES[signal["name"]][0]
+            SIGNAL_CHECKS[signal["name"]][0]
             for signal in signals
-            if signal.get("name") in SIGNAL_HYPOTHESES
+            if signal.get("name") in SIGNAL_CHECKS
         }
     )
 

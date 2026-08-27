@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.analyzer.legacy_analyzer import LegacyAnalyzer
+from src.analyzer.collection_stage import report_core_findings
 from src.metadata.collection_profile import MetadataCollectionProfile
 
 from tests.mocks.iceberg import SCENARIOS
@@ -34,6 +35,27 @@ def test_deep_profiles_every_primitive_column_in_bounded_batches():
         "type": "struct<code:string>", "status": "skipped", "skipped": True,
         "reason": "non_primitive_type",
     }
+
+
+def test_core_collection_makes_profile_status_explicit_before_full_profile():
+    table = SCENARIOS["healthy"]()
+    analyzer = LegacyAnalyzer(MockSpark(table), MetadataCollectionProfile.from_name("deep"))
+
+    context = analyzer.collect_core(table.name)
+
+    assert context.metadata["column_analysis"] == {"status": "pending_full_profile"}
+    completed = analyzer.complete_profile(context)
+    assert completed.metadata["column_analysis"]["status"] == "completed"
+
+
+def test_property_casing_signal_is_rendered_as_a_human_progress_message():
+    table = SCENARIOS["table_property_naming"]()
+    context = LegacyAnalyzer(MockSpark(table)).collect_core(table.name)
+    updates = []
+
+    report_core_findings(lambda stage, message, _: updates.append((stage, message)), context, 1)
+
+    assert any("Iceberg expects 'write.target-file-size-bytes'" in message for _, message in updates)
 
 
 def test_deep_records_range_hints_without_collecting_raw_distributions():

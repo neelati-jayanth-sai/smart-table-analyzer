@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 _db_lock = threading.Lock()
 
 MAX_FOLLOWUPS_PER_CHAIN = 2
-_MAX_CRITIC_LOOPS = 2
 
 
 def _run_one_check(
@@ -58,7 +57,7 @@ def _run_one_check(
     check_state = nodes.fetch_relevant_knowledge(check_state)
     check_state = nodes.generate_sql_query(check_state)
 
-    max_retries = state.get("max_retries", 3)
+    max_retries = 0 if check_state.get("cached_check_result") is not None else min(state.get("max_retries", 0), 1)
     for attempt in range(max_retries + 1):
         check_state = nodes.execute_with_workbench(check_state)
         status = check_state.get("execution_status")
@@ -66,7 +65,7 @@ def _run_one_check(
             break
         if attempt < max_retries:
             logger.warning(
-                "Check %d %s (%s); regenerating SQL, attempt %d/%d",
+                "Check %d %s (%s); retrying fixed template, attempt %d/%d",
                 check_index, status, _error_of(check_state), attempt + 1, max_retries,
             )
             check_state = nodes.generate_sql_query(check_state)
@@ -78,35 +77,12 @@ def _run_one_check(
             extra={"investigation_id": check_state["investigation_id"]},
         )
 
-    for attempt in range(_MAX_CRITIC_LOOPS):
-        check_state = nodes.analyze_query_result(check_state)
-        check_state = nodes.review_finding(check_state)
-        is_last_attempt = attempt == _MAX_CRITIC_LOOPS - 1
-
-        analysis = check_state.get("current_analysis") or {}
-        if not analysis.get("approved", True):
-            logger.warning(
-                "Check %d rejected by Critic. Retrying. Feedback: %s",
-                check_index, analysis.get("critic_feedback"),
-            )
-            if is_last_attempt:
-                break
-            check_state["critic_feedback"] = analysis.get("critic_feedback")
-            continue
-
-        finding_state = build_finding_state(check_state)
-        is_valid, rejection_reason = nodes.quality_gate.validate(Finding(**finding_state))
-        if is_valid or is_last_attempt:
-            break
-
-        logger.warning(
-            "Check %d rejected by quality gate. Retrying. Reason: %s",
-            check_index, rejection_reason,
-        )
-        check_state["critic_feedback"] = (
-            f"Your finding was rejected by an automated quality gate: {rejection_reason}. "
-            "Fix this specific issue and resubmit a complete, valid finding."
-        )
+    check_state = nodes.analyze_query_result(check_state)
+    check_state = nodes.review_finding(check_state)
+    finding_state = build_finding_state(check_state)
+    is_valid, rejection_reason = nodes.quality_gate.validate(Finding(**finding_state))
+    if not is_valid:
+        logger.warning("Check %d has a prose-quality issue: %s", check_index, rejection_reason)
 
     followup = _followup_question(check_state)
     with _db_lock:

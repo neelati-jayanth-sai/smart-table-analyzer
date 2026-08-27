@@ -59,20 +59,13 @@ def compact_to_finding_state(
         logger.warning("Finding rejected by quality gate: %s (check %d)",
                        rejection_reason, state["check_count"],
                        extra={"investigation_id": state["investigation_id"]})
-        finding_state = FindingState(
-            check_num=state["check_count"],
-            question=state.get("current_question") or "",
-            validated=False,
-            verdict="inconclusive",
-            exact_result=finding.exact_result,
-            rationale=f"Quality gate rejection: {rejection_reason}",
-            evidence_ids=finding.evidence_ids,
-            confidence=0.0,
-            recommendation=None, alternatives=[],
-            check_type=finding.check_type,
-            actionable_sql=None,
-            issue_state="needs_review",
+        finding_state["validated"] = False
+        finding_state["rationale"] = (
+            f"Evidence needs review ({rejection_reason}). {finding.rationale}"
         )
+        if not finding.evidence_ids:
+            finding_state["verdict"] = "inconclusive"
+            finding_state["issue_state"] = "needs_review"
     db.record_finding(state["investigation_id"], Finding(**finding_state))
     findings = list(state.get("findings", []))
     findings.append(finding_state)

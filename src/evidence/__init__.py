@@ -1,7 +1,12 @@
 """Typed evidence and coverage records for investigations."""
 
 from .coverage import CoverageEntry, CoverageLedger
-from .collection_adapter import CollectionEvidenceAdapter, CollectionEvidenceBundle, persist_collection_evidence
+from .collection_adapter import (
+    CollectionEvidenceAdapter,
+    CollectionEvidenceBundle,
+    persist_collection_evidence,
+    persist_column_profile_evidence,
+)
 from .models import (
     Availability,
     AvailabilityState,
@@ -21,4 +26,5 @@ __all__ = [
     "EvidenceProvenance",
     "EvidenceRecord",
     "persist_collection_evidence",
+    "persist_column_profile_evidence",
 ]

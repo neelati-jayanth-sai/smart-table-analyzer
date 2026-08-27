@@ -2,7 +2,8 @@
 
 from .legacy_analyzer import LegacyAnalyzer
 from .metrics import MetadataUnavailable
-from .pipeline import AnalysisOutcome, SmartTableAnalyzer
+from .outcome import AnalysisOutcome
+from .pipeline import SmartTableAnalyzer
 from .signals import detect_signals
 
 __all__ = [

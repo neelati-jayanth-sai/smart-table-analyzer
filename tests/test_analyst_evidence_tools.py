@@ -74,7 +74,7 @@ def test_analyst_lists_then_fetches_scoped_evidence_with_payload_and_provenance(
 
     assert result["content"] == '{"verdict":"found"}'
     assert {tool["function"]["name"] for tool in llm.calls[0]["tools"]} == {
-        "run_query", "list_evidence", "fetch_evidence"
+        "list_evidence", "fetch_evidence"
     }
     messages = _tool_messages(llm)
     assert messages[0]["evidence"] == [{

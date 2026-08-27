@@ -13,6 +13,7 @@ Already completed:
 
 This is check {check_num} of {max_checks}.
 {empty_note}
+Allowed deterministic check types: {registered_checks}
 Decide the single most valuable NEXT question to investigate. Base the decision on
 the signals above — do not run a fixed checklist. Skip anything the completed
 checks already settled, and skip anything the signals show is healthy.

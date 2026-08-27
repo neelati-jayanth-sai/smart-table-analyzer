@@ -6,6 +6,7 @@ import json
 
 from src.dashboard import InvestigationReportStore, RunIndex, default_run_index
 from src.dashboard.view_models import finding_rows, signal_rows
+from src.dashboard.current_result import _canonical_trail
 from src.reporting import ReportAssembler
 from tests.test_investigator_scenarios import build
 
@@ -40,6 +41,15 @@ def test_legacy_baseline_cannot_be_projected_as_clean(tmp_path):
 
     assert report.assessment.state == "incomplete"
     assert "predates deterministic assessment provenance" in report.assessment.reasons[0]
+
+
+def test_proof_uses_the_successful_attempt_once():
+    trail = [
+        {"check_num": 1, "execution_status": "error", "query_text": "first"},
+        {"check_num": 1, "execution_status": "success", "query_text": "second"},
+        {"check_num": 2, "execution_status": "success", "query_text": "third"},
+    ]
+    assert [entry["query_text"] for entry in _canonical_trail(trail)] == ["second", "third"]
 
 
 def test_store_defaults_history_to_latest_run_and_fingerprints_report(tmp_path):

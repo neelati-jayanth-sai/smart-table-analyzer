@@ -98,6 +98,8 @@ class CollectionEvidenceAdapter:
         status = analysis.get("status")
         if status == "not_collected_in_fast_profile":
             available = Availability(AvailabilityState.SKIPPED, "Fast collection does not profile base-table columns.")
+        elif status == "pending_full_profile":
+            available = Availability(AvailabilityState.SKIPPED, "Full column profile is running.")
         elif status == "partial":
             failed = int(analysis.get("total_columns_failed", 0))
             available = Availability(AvailabilityState.FAILED, f"Column profile is partial; {failed} column(s) failed.")
@@ -113,6 +115,10 @@ class CollectionEvidenceAdapter:
             {"column_analysis": analysis},
             EvidenceClass.NOT_ASSESSED if not available.is_available else None,
         )
+
+    def column_profile_record(self, context) -> EvidenceRecord:
+        """Expose the column-profile record for an enrichment revision."""
+        return self._column_profile(context)
 
     def _workload(self, context) -> EvidenceRecord:
         patterns = context.metadata.get("query_patterns")
@@ -161,3 +167,14 @@ def persist_collection_evidence(db, investigation_id: int, bundle: CollectionEvi
         )
         evidence_ids.append(evidence_id)
     return tuple(evidence_ids)
+
+
+def persist_column_profile_evidence(db, investigation_id: int, context) -> str:
+    """Append completed full-profile evidence and advance its coverage entry."""
+    record = CollectionEvidenceAdapter().column_profile_record(context)
+    evidence_id = f"evidence:{db.record_evidence(investigation_id, record)}"
+    db.record_coverage(
+        investigation_id,
+        CoverageEntry(record.module_name, record.availability, (evidence_id,)),
+    )
+    return evidence_id

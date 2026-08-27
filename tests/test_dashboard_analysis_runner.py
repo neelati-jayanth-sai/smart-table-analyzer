@@ -21,10 +21,16 @@ def test_analysis_request_rejects_incomplete_or_unsafe_table_names():
         AnalysisRequest(table_name="cat.schema.orders; DROP TABLE x").resolved_table()
 
 
-def test_analysis_request_maps_fast_and_legacy_shallow_to_the_fast_collector_profile():
-    assert AnalysisRequest(table_name="orders").resolved_metadata_profile() == "fast"
-    assert AnalysisRequest(table_name="orders", metadata_profile="shallow").resolved_metadata_profile() == "fast"
+def test_analysis_request_uses_full_deep_for_legacy_profile_inputs():
+    assert AnalysisRequest(table_name="orders").resolved_metadata_profile() == "deep"
+    assert AnalysisRequest(table_name="orders", metadata_profile="shallow").resolved_metadata_profile() == "deep"
+    assert AnalysisRequest(table_name="orders", metadata_profile="fast").resolved_metadata_profile() == "deep"
     assert AnalysisRequest(table_name="orders", metadata_profile="deep").resolved_metadata_profile() == "deep"
+
+
+def test_analysis_request_uses_thorough_check_limit_for_legacy_inputs():
+    assert AnalysisRequest(table_name="orders").resolved_max_checks() == 10
+    assert AnalysisRequest(table_name="orders", max_checks=1).resolved_max_checks() == 10
 
 
 def test_pipeline_emits_live_status_updates(tmp_path):
@@ -34,9 +40,8 @@ def test_pipeline_emits_live_status_updates(tmp_path):
 
     analyzer.analyze(table.name, "cat", "sch", output_dir=tmp_path / "reports")
 
-    assert [update.stage for update in updates] == [
-        "collecting_metadata",
-        "investigating",
-        "rendering_report",
-        "report_complete",
-    ]
+    stages = [update.stage for update in updates]
+    assert stages[0] == "collecting_metadata"
+    assert stages.index("profiling_columns") < stages.index("investigating")
+    assert stages.index("investigating") < stages.index("profile_complete")
+    assert stages[-2:] == ["rendering_report", "report_complete"]

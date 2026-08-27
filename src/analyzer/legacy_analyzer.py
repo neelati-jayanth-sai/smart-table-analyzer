@@ -15,7 +15,7 @@ import logging
 
 from src.calculators.baseline_scorer import score as compute_score
 from src.context import InvestigationContext
-from src.metadata.loader import load_table_metadata
+from src.metadata.loader import complete_column_profile, load_core_table_metadata
 from src.metadata.collection_profile import MetadataCollectionProfile
 
 from .metrics import MetadataUnavailable, collect_raw_metrics, extract_query_patterns
@@ -42,16 +42,28 @@ class LegacyAnalyzer:
         query_metrics_table: str | None = None,
     ) -> InvestigationContext:
         """Read the table once and return the investigation's source of truth."""
+        context = self.collect_core(
+            table_name, catalog_name, schema_name, snapshot_id, query_metrics_table
+        )
+        if self.metadata_profile.analyze_column_stats:
+            return self.complete_profile(context)
+        return context
+
+    def collect_core(
+        self,
+        table_name: str,
+        catalog_name: str = "",
+        schema_name: str = "",
+        snapshot_id: str | None = None,
+        query_metrics_table: str | None = None,
+    ) -> InvestigationContext:
+        """Collect deterministic core facts without a base-table column scan."""
         logger.info("Legacy Analyzer: collecting %s", table_name)
 
         raw = collect_raw_metrics(self.spark, table_name, snapshot_id)
         patterns = extract_query_patterns(self.spark, table_name, query_metrics_table)
-        metadata = load_table_metadata(
-            self.spark,
-            table_name,
-            row_count=int(raw.get("row_count", 0)),
-            profile=self.metadata_profile,
-        )
+        metadata = load_core_table_metadata(self.spark, table_name, self.metadata_profile)
+        metadata["deterministic_metrics"] = raw
         metadata["observation"] = {
             "snapshot_id": snapshot_id,
             "metrics_snapshot_pinned": bool(snapshot_id),
@@ -81,3 +93,12 @@ class LegacyAnalyzer:
             signals=signals,
             baseline=baseline,
         )
+
+    def complete_profile(self, context: InvestigationContext) -> InvestigationContext:
+        """Add the mandatory full column profile to a core investigation context."""
+        context.metadata = complete_column_profile(
+            self.spark,
+            context.metadata,
+            int((context.baseline.get("dimensions") or {}).get("row_count", 0)),
+        )
+        return context

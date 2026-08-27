@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 
@@ -35,6 +37,19 @@ KNOWLEDGE_BASE_READY.md
 # Local investigation material
 /screenshots/
 /CLAUDE.md
+/tmp-*/
+.envrc
+
+# Local development adapters and fixtures
+/src/runtime/
+/src/connectors/ollama_adapter.py
+/scripts/local_e2e_data.py
+/scripts/run_local_e2e.py
+/tests/mocks/iceberg.py
+/tests/test_local_iceberg_runtime.py
+/tests/test_local_e2e.py
+/tests/test_ollama_cloud_adapter.py
+/tests/test_ollama_e2e.py
 
 # Editors
 .vscode/

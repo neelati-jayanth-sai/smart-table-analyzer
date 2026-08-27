@@ -78,7 +78,7 @@ class QueryWorkbench:
         self.table_name = table_name
         self.full_count = full_count
         self.table_metadata = table_metadata
-        # Ground generated SQL in the real schema, so a hallucinated column is
+        # Ground registered template SQL in the real schema, so a bad template is
         # rejected with the available column list instead of failing in Spark.
         if table_name and table_metadata:
             from .schema_grounding import SqlGroundingHook

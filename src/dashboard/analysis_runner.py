@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import re
 
@@ -20,8 +21,8 @@ class AnalysisRequest:
     table_name: str
     snapshot_id: str | None = None
     query_metrics_table: str | None = None
-    metadata_profile: str = "fast"
-    max_checks: int = 5
+    metadata_profile: str = "deep"
+    max_checks: int = 10
 
     def resolved_table(self) -> tuple[str, str, str]:
         parts = self.table_name.strip().split(".")
@@ -30,13 +31,15 @@ class AnalysisRequest:
         return parts[0], parts[1], self.table_name.strip()
 
     def resolved_metadata_profile(self) -> str:
-        """Accept Fast and Deep plus the legacy shallow input alias."""
+        """Return the fixed metadata contract, accepting legacy inputs."""
         profile = self.metadata_profile.strip().lower()
-        if profile in {"fast", "shallow"}:
-            return "fast"
-        if profile == "deep":
-            return "deep"
-        raise ValueError("Metadata profile must be fast or deep (legacy: shallow).")
+        if profile not in {"fast", "shallow", "deep"}:
+            raise ValueError("Metadata profile must be deep (legacy: fast/shallow accepted).")
+        return "deep"
+
+    def resolved_max_checks(self) -> int:
+        """Return the fixed thorough investigation limit."""
+        return 10
 
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -57,6 +60,15 @@ class DashboardAnalysisRunner:
 
     def connect(self):
         """Configure certificates and return an active Spark Connect session."""
+        if os.getenv("STA_RUNTIME") == "local":
+            from src.runtime import LocalIcebergRuntime, LocalIcebergSession
+
+            root = self.repo_root / "data" / "local-e2e"
+            runtime = LocalIcebergRuntime.from_paths(
+                os.getenv("STA_LOCAL_CATALOG", str(root / "catalog.db")),
+                os.getenv("STA_LOCAL_WAREHOUSE", str(root / "warehouse")),
+            )
+            return LocalIcebergSession(runtime)
         from scripts import _investigation_cli as cli
         from pyspark.sql import SparkSession
 
@@ -89,9 +101,9 @@ class DashboardAnalysisRunner:
         analyzer = self._analyzer_factory(
             spark=spark,
             db=db,
-            llm=DellAIAAdapter.from_env(),
+            llm=self._llm(),
             knowledge=KnowledgeStore(db_path, repo_root=self.repo_root),
-            max_checks=request.max_checks,
+            max_checks=request.resolved_max_checks(),
             max_retries=3,
             max_workers=1,
             metadata_profile=request.resolved_metadata_profile(),
@@ -110,3 +122,11 @@ class DashboardAnalysisRunner:
     def _emit(progress: ProgressCallback | None, stage: str, message: str) -> None:
         if progress is not None:
             progress(AnalysisProgress(stage, message))
+
+    @staticmethod
+    def _llm():
+        if os.getenv("LLM_PROVIDER", "dell").lower() == "ollama":
+            from src.connectors import OllamaCloudAdapter
+
+            return OllamaCloudAdapter.from_env()
+        return DellAIAAdapter.from_env()

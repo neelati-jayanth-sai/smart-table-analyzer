@@ -27,15 +27,15 @@
 - `load_table_metadata(spark, table_name)` returns columns, `.files`, `.partitions`, `.history`, and `.snapshots` summaries plus sample rows.
 - Metadata is JSON-safe (numpy scalars, Decimals, datetime, and binary values are normalized) before being passed into the investigator state.
 - `src/models/state.py` carries `table_metadata` on `InvestigationState`.
-- `InvestigationState` also tracks `asked_questions` across checks so the planner can avoid duplicate questions.
-- `build_query_prompt` uses metadata to ground generated SQL in real table and Iceberg/IOMETE conventions.
+- `InvestigationState` also tracks `asked_questions` across checks so selection can avoid duplicate questions.
+- Registered deterministic skill templates use metadata table names only through safe rendering.
 
 ## Query serialization
 
 - `src/query/query_workbench.py` normalizes all Spark row values to plain JSON/msgpack serializable primitives before returning `QueryResult`.
 - This ensures `InvestigationState` checkpoint writes to SQLite and `investigation_trail` JSON storage succeed for Decimal, datetime, binary, and numpy-backed values.
 - `QueryWorkbench` supports optional `table_name` and `snapshot_id` for Iceberg `VERSION AS OF` pinning and avoids double execution by default (use `full_count=True` for an accurate total).
-- It accepts `table_metadata` and appends `SqlGroundingHook` to the hook pipeline so generated SQL is validated against real column metadata before execution.
+- It accepts `table_metadata` and appends `SqlGroundingHook` before execution as defence in depth.
 
 ## Schema grounding seam
 
@@ -78,13 +78,15 @@
 
 ## Analysis pipeline seam
 
-- `src/analyzer/legacy_analyzer.py` is the deterministic sensor layer: `LegacyAnalyzer.collect(table)` reads Iceberg metadata once and returns an `InvestigationContext` of metadata, signals, and baseline. It never calls an LLM and never recommends.
+- `src/runtime/` is the analysis-runtime seam. `AnalysisRuntime` returns canonical Iceberg analysis models; `SparkIometeRuntime` owns production Spark normalization and `LocalIcebergRuntime` owns PyIceberg metadata plus DuckDB compute. The analyzer must not branch by environment or consume Spark/Arrow/DuckDB values directly.
+- The proven runtime interface is intentionally limited to table description, bounded samples, primitive-column profiling, latest snapshot lookup, optional workload patterns, and validated read-only evidence queries. The latter is an audited Investigator requirement, not a generic Spark SQL interface.
+- `src/analyzer/legacy_analyzer.py` is the deterministic sensor layer: `collect_core(table)` returns enough metadata, signals, and baseline for investigation; `complete_profile(context)` appends the mandatory full primitive-column profile. It never calls an LLM and never recommends.
 - `collect_raw_metrics` retains partition-storage facts (partition byte and file-count distribution) alongside row skew without scanning the base table: it batches `.files`, `.partitions`, and `.snapshots` aggregates. Its `row_count` is the current data-file `record_count` estimate, with explicit provenance, rather than an exact delete-aware `COUNT(*)`.
-- `src/metadata/collection_profile.py::MetadataCollectionProfile` is the collection Interface. `fast` is the default metadata-only mode; legacy `shallow` input resolves to it. `deep` is an explicit opt-in (`--metadata-profile deep` or `METADATA_COLLECTION_PROFILE=deep`) that profiles every primitive column in bounded aggregate batches, records skipped/failed columns, and retains only bounded sample rows. This keeps Fast bounded by metadata size while making Deep coverage explicit.
+- `src/metadata/collection_profile.py::MetadataCollectionProfile` is the collection Interface. The dashboard always resolves to `deep` and ten Thorough checks; compatibility callers may still carry legacy profile values while migration completes. Deep profiles every primitive column in bounded aggregate batches and records skipped/failed columns.
 - `detect_signals` turns measured facts into `{name, severity, detail, metrics}` signals (small_files, undersized_partitions, partition_skew, unpartitioned, missing_sort_order, delete_overhead, manifest_health, snapshot_retention, table_property_naming, custom_property_naming, poor_pruning, measurement_unavailable, empty_table). `undersized_partitions` means average partition capacity is below the 128 MB file target; it warrants testing a coarser partition transform, but does not by itself prove that daily pruning is inappropriate. Unavailable measurements always require review rather than silently becoming zero-valued facts.
 - `src/metadata/properties.py` is the table-property casing seam. It preserves exact catalog keys in `raw_properties` and exposes only exact lowercase keys as effective `properties`; it never turns a mixed-case lookalike into an active setting. Known Iceberg/team configuration keys with noncanonical casing produce a high-severity `table_property_naming` signal, while unknown custom names remain a low-severity caution. Canonical-plus-variant pairs are recorded as collisions for report evidence.
 - High-severity deterministic signals are assessment evidence, not LLM instructions: they lower the baseline score, persist with it, and require a review warning even when an LLM check returns `not_found`. A lifecycle status of `completed` means checks finished; it never means the table is healthy.
-- `src/analyzer/pipeline.py` is the single execution path: Legacy Analyzer -> Context Manager -> Investigator -> Evidence -> Report. There is no branch that skips the Investigator.
+- `src/analyzer/pipeline.py` starts the Investigator from core evidence while the required full profile runs beside it; it persists the completed profile before final review and reporting.
 - `SmartTableAnalyzer` receives and reuses an already-established Spark session; the CLI only stops sessions it created. Evidence queries use Spark Connect tag-scoped interruption when the connector supports it, and otherwise report timeout cancellation as unconfirmed rather than claiming the action stopped.
 - The Analyzer captures a snapshot when callers have not supplied one. Deterministic metrics are read `VERSION AS OF` that snapshot; DDL, schema, and properties remain explicitly live observations.
 - Deep column profiling is capped at eight columns and one worker by default. Its timeout returns promptly and records unconfirmed server-side cancellation rather than pretending Spark work stopped.
@@ -96,10 +98,10 @@
 
 - States: `metadata_collected` -> `planning` -> `checks_running` -> `evidence_validated` -> `completed` | `failed`.
 - `InvestigationDb.complete_investigation` downgrades `completed` to `failed` when no finding cites evidence, so a report can never claim success over an empty evidence set.
-- `src/investigator/planner/` plans hypotheses adaptively: the LLM ranks them against the measured signals, with signal-derived hypotheses and then a generic coverage sequence as fallbacks for when the LLM is unavailable.
-- `src/investigator/loop/` runs each hypothesis as a chain (SQL -> evidence -> decide -> follow-up, up to `MAX_FOLLOWUPS_PER_CHAIN`); a chain that fails is logged and skipped rather than ending the run.
+- `src/investigator/selection.py` selects one registered check adaptively from measured signals, with deterministic fallback when the LLM is unavailable.
+- `src/investigator/skills/` is the deterministic execution seam: registered templates are safely rendered and recorded; the LLM cannot supply SQL.
+- `src/investigator/loop/` runs each hypothesis as a chain (skill -> evidence -> decide -> follow-up, up to `MAX_FOLLOWUPS_PER_CHAIN`); a chain that fails is logged and skipped rather than ending the run.
 - Every finding carries `evidence_ids` and a `confidence`; `graph_node_executors._confidence` derives one deterministically when the LLM omits it.
-
 ## Knowledge retrieval seam
 
 - `src/investigator/knowledge/retriever.py` provides deterministic `KnowledgeRetriever` fallback when the LLM tool loop yields no references.
@@ -165,7 +167,7 @@
 - `src/analyzer/` deterministic collection (`metrics.py`, `signals.py`) plus the
   pipeline entrypoint (`pipeline.py`).
 - `src/context/` the investigation context and the prompt-rendering engine.
-- `src/investigator/` reasoning, split into `planner/`, `loop/`, `executors/`,
+- `src/investigator/` reasoning, split into `selection.py`, `loop/`, `executors/`,
   `critic/`, `knowledge/`, `prompts/`, and `state/`.
 - `src/metadata/` every Spark structure read, performed once per investigation.
 - `src/models/` domain models: `Finding`, `Investigation`, `InvestigationState`,
@@ -181,22 +183,18 @@
 - The Streamlit UI has one job: validate and run one fully qualified table,
   then render only that session's fresh outcome. It does not browse report
   history or artifacts.
-- Historic report persistence remains a backend capability; it is not part of
-  the dashboard interface.
+- Historic report persistence remains a backend capability, not dashboard UI.
 
 ## Mock Iceberg test harness
 
 - `tests/mocks/iceberg.py` builds realistic Iceberg metadata per scenario:
   `healthy`, `partition_skew`, `small_files`, `missing_sort_order`,
   `delete_overhead`, `table_property_naming`, `empty`.
-- Each scenario is internally consistent — row counts, file counts, and byte
-  totals agree across `.files` and `.partitions` — and raises exactly one signal,
-  so a test can assert both detection and the absence of false positives.
-- `tests/mocks/sql.py` is a small read-only SQL evaluator; mock evidence is
-  derived from the scenario's data rather than hardcoded per test.
-- `tests/mocks/spark.py` serves those tables through the evaluator and records
-  every query and table read, which is how "read metadata once" is asserted.
-  `fail_on` injects Spark-side failures.
-- `tests/mocks/llm.py` answers by prompt kind rather than round-robin, so
-  concurrent checks stay deterministic; `sql=` injects hook-violating SQL and
-  `analysis=` controls verdicts, confidence, and follow-ups.
+- Scenarios are internally consistent; `sql.py`, `spark.py`, and `llm.py` derive
+  evidence, record reads, and provide deterministic prompt-kind responses.
+
+## Local Iceberg E2E
+
+- `LocalIcebergRuntime` and `LocalIcebergSession` are the local adapter: PyIceberg
+  normalizes metadata and DuckDB executes the existing read-only query path.
+- Local fixtures use a documented 20 KB scale; production retains the 128 MB standard.

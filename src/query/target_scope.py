@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlparse
 
 from ._schema_grounding_core import METADATA_SUFFIXES, _extract_sources
@@ -24,7 +25,13 @@ class TargetTableHook(QueryHook):
             for statement in sqlparse.parse(query)
             for source, _ in _extract_sources(statement.tokens)
         ]
-        outside = [source for source in sources if not self._is_allowed(source)]
+        aliases = {name.casefold() for name in re.findall(
+            r"(?:\bWITH\b|,)\s*([A-Za-z_][\w]*)\s+AS\s*\(", query, re.IGNORECASE
+        )}
+        outside = [
+            source for source in sources
+            if source.casefold().strip("`") not in aliases and not self._is_allowed(source)
+        ]
         if outside:
             return ValidationResult(
                 False,

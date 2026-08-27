@@ -15,11 +15,17 @@ from src.models import ASSESSMENT_VERSION, LIFECYCLE_STATES
 from .investigation_reads import InvestigationReadOperations
 from .investigation_writes import InvestigationWriteOperations
 from .schema import create_schema
+from .timeline import TimelineReadOperations, TimelineWriteOperations
 
 logger = logging.getLogger(__name__)
 
 
-class InvestigationDb(InvestigationWriteOperations, InvestigationReadOperations):
+class InvestigationDb(
+    InvestigationWriteOperations,
+    InvestigationReadOperations,
+    TimelineWriteOperations,
+    TimelineReadOperations,
+):
     """Own SQLite lifecycle; read and write adapters share its connection seam."""
 
     def __init__(self, db_path: Path | str):

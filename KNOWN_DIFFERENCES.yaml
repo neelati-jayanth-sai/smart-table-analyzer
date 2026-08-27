@@ -1,0 +1,14 @@
+version: 1
+differences:
+  - operation: query_patterns
+    production_behavior: Reads IOMETE activity-monitoring logs when available.
+    local_behavior: Returns an explicit unavailable measurement.
+    normalization_rule: Do not synthesize workload signals or treat unavailable as zero.
+    why_safe: Workload logs are deployment-specific and are optional in the existing analyzer.
+    covering_test: tests/test_runtime_conformance.py::test_local_workload_is_explicitly_unavailable
+  - operation: execute_readonly
+    production_behavior: Spark executes validated target-scoped SELECT/WITH evidence SQL.
+    local_behavior: DuckDB accepts only its native supported SQL subset.
+    normalization_rule: Unsupported SQL fails explicitly and is recorded as failed evidence.
+    why_safe: No SQL is translated or silently reinterpreted.
+    covering_test: tests/test_runtime_conformance.py::test_unsupported_local_sql_fails_closed

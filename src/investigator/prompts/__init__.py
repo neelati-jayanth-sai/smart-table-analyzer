@@ -5,7 +5,6 @@ from .builders import (
     build_critic_prompt,
     build_decide_prompt,
     build_knowledge_prompt,
-    build_query_prompt,
 )
 from .response_validator import ResponseValidator
 
@@ -15,5 +14,4 @@ __all__ = [
     "build_critic_prompt",
     "build_decide_prompt",
     "build_knowledge_prompt",
-    "build_query_prompt",
 ]

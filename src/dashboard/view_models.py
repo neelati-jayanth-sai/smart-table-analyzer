@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.models import InvestigationReport
+from src.utils import human_bytes
 
 from ui_metadata import CHECK_METADATA, CHECK_METADATA_DEFAULT
 
@@ -70,9 +71,11 @@ def _signal_measurement(name: str, metrics: dict[str, Any]) -> tuple[str, str]:
     if name == "partition_skew":
         return f"{metrics.get('ratio', 'n/a')}× largest / average", "20× requires review"
     if name == "small_files":
-        return _megabytes(metrics.get("avg_file_bytes")), "67 MB (50% of 134 MB target)"
+        target = metrics.get("target_file_bytes", 134_217_728)
+        return human_bytes(metrics.get("avg_file_bytes")), f"50% of {human_bytes(target)} target"
     if name == "large_files":
-        return _megabytes(metrics.get("avg_file_bytes")), "268 MB (2× 134 MB target)"
+        target = metrics.get("target_file_bytes", 134_217_728)
+        return human_bytes(metrics.get("avg_file_bytes")), f"2× {human_bytes(target)} target"
     if name == "delete_overhead":
         return _megabytes(metrics.get("delete_bytes")), "More than 10% of table bytes"
     if name == "manifest_health":
@@ -87,4 +90,4 @@ def _signal_measurement(name: str, metrics: dict[str, Any]) -> tuple[str, str]:
 
 
 def _megabytes(value: Any) -> str:
-    return f"{float(value) / 1_000_000:.1f} MB" if isinstance(value, (int, float)) else "n/a"
+    return human_bytes(value)

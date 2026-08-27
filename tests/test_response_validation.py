@@ -27,12 +27,11 @@ class TestResponseRobustness:
         assert is_valid, error
         assert parsed["verdict"] == "found"
 
-    def test_sql_in_a_fence_is_unwrapped(self):
-        is_valid, _, sql = ResponseValidator.validate_query_response(
+    def test_sql_is_not_a_valid_selection_response(self):
+        is_valid, error, _ = ResponseValidator.validate_decide_response(
             "```sql\nSELECT COUNT(*) FROM cat.sch.orders\n```"
         )
-        assert is_valid
-        assert sql == "SELECT COUNT(*) FROM cat.sch.orders"
+        assert not is_valid and error
 
     def test_unparseable_response_is_still_rejected(self):
         is_valid, error, _ = ResponseValidator.validate_analysis_response("not json at all")

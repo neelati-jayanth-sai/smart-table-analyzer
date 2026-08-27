@@ -51,33 +51,32 @@ def fetch_knowledge_tool() -> dict[str, Any]:
     }
 
 
-def run_query_tool() -> dict[str, Any]:
+def run_check_tool() -> dict[str, Any]:
     return {
         "type": "function",
         "function": {
-            "name": "run_query",
+            "name": "run_check",
             "description": (
-                "Execute an additional read-only Spark SQL query against the table or its "
-                "metadata tables (.files, .partitions, .snapshots, .history) to gather more "
-                "evidence before finalizing your analysis."
+                "Run one registered deterministic diagnostic check. SQL is selected by the "
+                "system; never provide SQL or query text."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "sql": {
+                    "check_type": {
                         "type": "string",
-                        "description": "A single read-only SELECT/SHOW/DESCRIBE statement.",
+                        "enum": ["empty_table", "file_size", "skew", "partitioning", "partition_suggestions", "sort", "delete_overhead", "manifest_organization", "snapshot_retention", "table_properties", "scan_efficiency"],
                     },
                     "reason": {
                         "type": "string",
                         "description": "Why this additional query is needed.",
                     },
                 },
-                "required": ["sql"],
+                "required": ["check_type"],
             },
         },
     }
 
 
 def all_tools() -> list[dict[str, Any]]:
-    return [list_knowledge_tool(), fetch_knowledge_tool(), run_query_tool()]
+    return [list_knowledge_tool(), fetch_knowledge_tool(), run_check_tool()]
